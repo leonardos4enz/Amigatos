@@ -53,6 +53,13 @@
     '.cc-breeds{display:grid;grid-auto-flow:column;grid-template-rows:repeat(2,auto);grid-auto-columns:88px;gap:12px;overflow-x:auto;padding:5px 5px 12px;scroll-snap-type:x proximity;scroll-padding-inline:5px;scrollbar-width:thin;scrollbar-color:var(--cc-accent) transparent;}',
     '.cc-breeds .cc-opt{scroll-snap-align:start;font-size:13px;line-height:1.05;min-height:96px;justify-content:flex-start;text-align:center;}',
     '.cc-breeds::-webkit-scrollbar{height:8px;}.cc-breeds::-webkit-scrollbar-thumb{background:var(--cc-accent);}',
+    '.cc-stage.cc-hasbg{background:#ffe7ee;}.cc-stage.cc-hasbg::before{display:none;}',
+    '.cc-stage canvas.catbg-canvas{position:absolute;width:100%;height:100%;z-index:0;}',
+    '.cc-stage.cc-hasbg>canvas.cc-cat{z-index:1;}',
+    '.cc-bgs{display:grid;grid-auto-flow:column;grid-auto-columns:112px;gap:12px;overflow-x:auto;padding:5px 5px 12px;scroll-snap-type:x proximity;scroll-padding-inline:5px;scrollbar-width:thin;scrollbar-color:var(--cc-accent) transparent;}',
+    '.cc-bgs::-webkit-scrollbar{height:8px;}.cc-bgs::-webkit-scrollbar-thumb{background:var(--cc-accent);}',
+    '.cc-bgs .cc-opt{scroll-snap-align:start;font-size:13px;line-height:1.05;padding:6px 6px 7px;text-align:center;}',
+    '.cc-bgs .cc-opt img{width:96px;height:72px;image-rendering:pixelated;image-rendering:crisp-edges;}',
     '.cc-namerow{display:flex;gap:12px;align-items:stretch;padding:0 3px;}',
     '.cc-namerow .cc-name{flex:1 1 auto;min-width:0;margin:3px;width:auto;}',
     '.cc-dice{font:inherit;font-size:20px;line-height:1;border:0;margin:3px;padding:0 10px;cursor:pointer;background:var(--cc-accent2);',
@@ -104,7 +111,7 @@
     // --- vista previa ---
     var stageWrap = el('div', 'cc-stagewrap');
     var stage = el('div', 'cc-stage cc-px', { title: '¡Hazle cariño!', role: 'img', 'aria-label': 'Vista previa del gato' });
-    var canvas = el('canvas');
+    var canvas = el('canvas', 'cc-cat');
     stage.appendChild(canvas);
     var plate = el('div', 'cc-plate cc-px');
     var hint = el('div', 'cc-hint', { text: 'toca a tu gato ♥' });
@@ -156,6 +163,26 @@
     story.appendChild(storyTitle);
     story.appendChild(storyText);
     secBreed.appendChild(story);
+
+    // fondo (solo si el núcleo CatBG está cargado y hay escenas)
+    var BG = window.CatBG && typeof window.CatBG.list === 'function' ? window.CatBG : null;
+    var bgList = BG ? BG.list() : [];
+    var bgItems = [], bgCtl = null, bgShown = null, bgStrip = null;
+    if (bgList.length) {
+      var secBg = section('Fondo');
+      bgStrip = el('div', 'cc-bgs', { role: 'group', 'aria-label': 'Fondo' });
+      bgItems = bgList.map(function (b) {
+        var btn = el('button', 'cc-opt', { type: 'button', 'aria-pressed': 'false', title: b.label });
+        var img = el('img', '', { alt: '', width: '96', height: '72', draggable: 'false' });
+        img.src = BG.toDataURL(b.id, 48, 36);
+        btn.appendChild(img);
+        btn.appendChild(el('span', '', { text: (b.emoji ? b.emoji + ' ' : '') + b.label }));
+        on(btn, 'click', function () { setBg(b.id); });
+        bgStrip.appendChild(btn);
+        return { btn: btn, id: b.id };
+      });
+      secBg.appendChild(bgStrip);
+    } else BG = null;
 
     // filas de color
     var swatchRows = {};
@@ -212,6 +239,11 @@
     container.appendChild(root);
 
     var ctrl = A.mount(canvas, cat, { scale: 8, anim: 'idle' });
+    if (BG) {
+      stage.classList.add('cc-hasbg');
+      bgShown = BG.resolve(cat.bg);
+      bgCtl = BG.mount(stage, bgShown);
+    }
 
     // --- estado ---
     function getCat() {
@@ -219,6 +251,8 @@
       for (var k in cat) c[k] = cat[k];
       var n = nameInput.value.trim().slice(0, 16);
       c.name = n || 'Michi';
+      if (BG) c.bg = BG.resolve(c.bg);
+      else if (typeof c.bg !== 'string' || !c.bg) c.bg = 'cuarto';
       return c;
     }
 
@@ -245,6 +279,11 @@
       story.style.display = info && info.story ? '' : 'none';
       patternItems.forEach(function (it) { it.btn.setAttribute('aria-pressed', it.id === cat.pattern ? 'true' : 'false'); });
       accItems.forEach(function (it) { it.btn.setAttribute('aria-pressed', it.id === cat.accessory ? 'true' : 'false'); });
+      if (BG) {
+        var cur = BG.resolve(cat.bg);
+        bgItems.forEach(function (it) { it.btn.setAttribute('aria-pressed', it.id === cur ? 'true' : 'false'); });
+        if (bgCtl && cur !== bgShown) { bgShown = cur; bgCtl.set(cur); }
+      }
       if (thumbs) {
         patternItems.forEach(function (it) {
           var c = getCat(); c.pattern = it.id; c.accessory = 'none';
@@ -298,6 +337,20 @@
       emit(true);
     }
 
+    function setBg(id) {
+      if (!BG) return;
+      var nid = BG.resolve(id);
+      var changed = nid !== cat.bg;
+      cat.bg = nid;
+      refresh(false);
+      var sel = bgItems.filter(function (it) { return it.id === nid; })[0];
+      if (sel && bgStrip.scrollWidth > bgStrip.clientWidth) {
+        var bl = sel.btn.offsetLeft - bgStrip.offsetLeft, bw = sel.btn.offsetWidth;
+        if (bl < bgStrip.scrollLeft || bl + bw > bgStrip.scrollLeft + bgStrip.clientWidth) bgStrip.scrollLeft = bl - 10;
+      }
+      if (changed) emit(true);
+    }
+
     on(nameDice, 'click', function () {
       var names = A.NAMES || ['Michi'];
       var n = nameInput.value.trim(), tries = 0, pickN = n;
@@ -334,6 +387,7 @@
       getCat: getCat,
       destroy: function () {
         ctrl.destroy();
+        if (bgCtl) { bgCtl.destroy(); bgCtl = null; }
         listeners.forEach(function (l) { l[0].removeEventListener(l[1], l[2]); });
         listeners = [];
         if (root.parentNode) root.parentNode.removeChild(root);

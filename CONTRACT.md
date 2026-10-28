@@ -109,3 +109,52 @@ Conexión: `io({ auth: { token } })`. Si el token es inválido, el server rechaz
 - `CatCreator.mount(container, initialCat, onChange)` → renderiza preview animado grande + controles
   (nombre, colores con swatches pixel, patrón, accesorio, botón "🎲 Aleatorio"). Llama `onChange(cat)` en cada cambio.
   Devuelve `{ getCat(), destroy() }`. No incluye botón de guardar (lo pone app.js).
+
+## Juegos enchufables (añadido v2)
+Cada juego nuevo vive en **dos archivos propios** y no toca nada más:
+
+- `server/games/<id>.js` (se carga solo; el id es el nombre del archivo). Exporta:
+  - `create(players)` → estado inicial `{type: '<id>', players, turn, status: 'playing', winnerId: null, reason: null, data, secret?}`.
+    `players[0]` empieza (en revancha el server invierte el orden). `secret` es info oculta: **nunca** se envía al cliente.
+  - `applyMove(state, userId, move)` → `{state}` o `{error: 'mensaje en español'}`. Puro, sin mutar `state`.
+    Validar: partida en curso, que sea su turno, y el `move`. Al terminar: `status: 'finished'`, `turn: null`,
+    `winnerId` (o null = empate) y `reason` propio del juego.
+  - opcional `revealData(state)` → `data` a mostrar si alguien abandona (para destapar lo oculto).
+- `public/js/games/<id>.js` (ya incluido en index.html, después de games-ui.js). Llama a:
+  ```js
+  GamesUI.register({
+    id, name, emoji, description, btnClass,         // btnClass: 'btn-pink'|'btn-mint'|'btn-lilac'|'btn-peach'
+    build(container, api) -> ui,                     // crea el DOM una vez por partida; api.send(move), api.icon(name), api.escapeHTML
+    update(ui, state, myId, api),                    // refresca con cada game:state (comparar ids con String())
+    scoreHTML(player, state) -> html,                // opcional: texto bajo cada gato en la barra VS
+    react(prev, state, ctx),                         // opcional: ctx.myId, ctx.happy(uid), ctx.sad(uid), ctx.sound('move'|'hit'|'miss'|'win'|'click')
+    overText(state, {won, draw, oppName, myId}) -> string  // opcional: frase del resultado final
+  });
+  ```
+  Estilos: inyecta tu propio `<style>` con clases prefijadas por el id del juego. `api.icon` dibuja iconos pixel SVG
+  ('paw', 'fish', 'yarn', 'cat', 'heart'… ver `pixelSVG` en games-ui.js). `CatArt.toDataURL(cat, scale)` da avatares.
+
+## Fondos personalizados (añadido v3)
+- `cat.bg`: id de escena de fondo (string). Desconocido o ausente → `CatBG.DEFAULT` ("cuarto").
+- Núcleo `public/js/backgrounds.js` (window.CatBG): `register({id,label,emoji,animated,draw(ctx,w,h,t)})`,
+  `list()`, `has(id)`, `resolve(id)`, `mount(container, id, {base}) → {set(id), destroy()}`, `toDataURL(id, w, h)`.
+  `draw` pinta en pixeles lógicos (≈96×72, pero el alto varía con el contenedor: dibujar adaptándose a `w`,`h`).
+  Animadas a 8 fps; `t` en segundos.
+- Escenas en `public/js/bg/indoor.js` y `public/js/bg/outdoor.js`.
+
+## Amigos (añadido v3)
+Amistad **mutua e inmediata** (sin solicitudes): al agregar se guardan ambas direcciones en
+`friendships(user_id, friend_id, created_at, PK(user_id, friend_id))` (ON DELETE CASCADE).
+DB: `addFriend(a,b)`, `removeFriend(a,b)`, `isFriend(a,b)`, `listFriends(uid)`, `searchUsers(q, excludeId, limit=10)`.
+
+| Método | Ruta | Body | Respuesta |
+|---|---|---|---|
+| GET | `/api/friends` | — | `{friends: [{id, username, cat, wins, losses, draws, online, status: "idle"\|"playing"\|"offline"}]}` |
+| POST | `/api/friends` | `{username}` | `{friend}` · errores: "No existe ese usuario" (404), "No puedes agregarte a ti misma/o" (400), "Ya son amigos" (409) |
+| DELETE | `/api/friends/:id` | — | `{ok: true}` (quita ambas direcciones) |
+| GET | `/api/users/search?q=` | — | `{users: [{id, username, cat, isFriend}]}` (q ≥ 1 char, contiene, sin distinguir mayúsculas; prefijos primero; te excluye) |
+
+Socket: `friends:updated` (sin payload) a ambas personas al agregar/quitar. El estado en línea/jugando
+**no** se reenvía por amigos: el cliente cruza su lista de amigos con `presence`.
+UI: panel "Mis amigos 💕" arriba de la sala (buscador, lista con botones de juego del catálogo, "Quitar"),
+y botón "+ Agregar" en "Conectados ahora" para quien no es amiga/o.

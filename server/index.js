@@ -7,11 +7,17 @@ const { Server } = require('socket.io');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+const fs = require('fs');
 const db = require('./db');
-const tictactoe = require('./games/tictactoe');
-const hangman = require('./games/hangman');
 
-const GAMES = { tictactoe, hangman };
+// Cada archivo de server/games/ es un juego: exporta create(players) y applyMove(state, userId, move),
+// y opcionalmente revealData(state) para destapar la info oculta (state.secret) si alguien abandona.
+// El id del juego es el nombre del archivo.
+const GAMES = {};
+for (const file of fs.readdirSync(path.join(__dirname, 'games'))) {
+  if (file.endsWith('.js')) GAMES[path.basename(file, '.js')] = require(path.join(__dirname, 'games', file));
+}
+console.log('[amigatos] juegos:', Object.keys(GAMES).join(', '));
 const PORT = process.env.PORT || 3000;
 let JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -40,6 +46,7 @@ function validateCat(input) {
     cat: {
       name,
       breed: BREEDS.includes(input.breed) ? input.breed : 'comun',
+      bg: typeof input.bg === 'string' && /^[a-z0-9]{2,20}$/.test(input.bg) ? input.bg : 'cuarto',
       fur: input.fur.toLowerCase(),
       pattern: input.pattern,
       patternColor: input.patternColor.toLowerCase(),
@@ -132,6 +139,52 @@ app.put('/api/cat', wrap(auth), wrap(async (req, res) => {
 app.get('/api/leaderboard', wrap(async (req, res) => {
   const list = await db.leaderboard(50);
   res.json({ players: list.map((u) => ({ username: u.username, cat: u.cat || null, wins: u.wins, losses: u.losses, draws: u.draws })) });
+}));
+
+// ---------- Amigos (mutuos e inmediatos, sin solicitudes) ----------
+function friendView(u) {
+  const isOnline = online.has(u.id);
+  return {
+    ...publicUser(u),
+    online: isOnline,
+    status: !isOnline ? 'offline' : isPlaying(u.id) ? 'playing' : 'idle',
+  };
+}
+function notifyFriends(...uids) {
+  for (const uid of uids) io.to(room(uid)).emit('friends:updated');
+}
+
+app.get('/api/friends', wrap(auth), wrap(async (req, res) => {
+  const list = await db.listFriends(req.user.id);
+  res.json({ friends: list.map(friendView) });
+}));
+
+app.post('/api/friends', wrap(auth), wrap(async (req, res) => {
+  const username = req.body && typeof req.body.username === 'string' ? req.body.username.trim() : '';
+  if (!username) return res.status(400).json({ error: 'Escribe el nombre de usuario de tu amiga/o.' });
+  const other = await db.findByUsername(username);
+  if (!other) return res.status(404).json({ error: 'No existe ese usuario' });
+  if (other.id === req.user.id) return res.status(400).json({ error: 'No puedes agregarte a ti misma/o' });
+  if (await db.isFriend(req.user.id, other.id)) return res.status(409).json({ error: 'Ya son amigos' });
+  await db.addFriend(req.user.id, other.id);
+  notifyFriends(req.user.id, other.id);
+  res.json({ friend: friendView(other) });
+}));
+
+app.delete('/api/friends/:id', wrap(auth), wrap(async (req, res) => {
+  const fid = Number(req.params.id);
+  if (!Number.isInteger(fid) || fid <= 0) return res.status(400).json({ error: 'Amiga/o inválida/o.' });
+  const removed = await db.removeFriend(req.user.id, fid);
+  if (removed) notifyFriends(req.user.id, fid);
+  res.json({ ok: true });
+}));
+
+app.get('/api/users/search', wrap(auth), wrap(async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 20) : '';
+  if (q.length < 1) return res.status(400).json({ error: 'Escribe al menos una letra para buscar.' });
+  const [found, friends] = await Promise.all([db.searchUsers(q, req.user.id, 10), db.listFriends(req.user.id)]);
+  const ids = new Set(friends.map((f) => f.id));
+  res.json({ users: found.map((u) => ({ id: u.id, username: u.username, cat: u.cat || null, isFriend: ids.has(u.id) })) });
 }));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));
@@ -238,9 +291,8 @@ function abandon(game, leaverId) {
   const s = game.state;
   if (s.status !== 'playing') return;
   const winner = s.players.find((p) => p.id !== leaverId);
-  const data = s.type === 'hangman' && s.secret
-    ? { ...s.data, word: s.secret, masked: [...s.secret] }
-    : s.data;
+  const mod = GAMES[s.type];
+  const data = mod.revealData ? mod.revealData(s) : s.data;
   game.state = { ...s, status: 'finished', turn: null, winnerId: winner.id, reason: 'abandon', data };
   game.left.add(leaverId);
   finishGame(game);

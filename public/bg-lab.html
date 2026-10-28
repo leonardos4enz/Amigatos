@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laboratorio de fondos</title>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; padding: 16px; background: #fdeef3; color: #3b2a3f; font-family: "Pixelify Sans", monospace; }
+    h1 { margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+    .card { background: #fff; padding: 8px; box-shadow: 0 -3px 0 #3b2a3f, 0 3px 0 #3b2a3f, -3px 0 0 #3b2a3f, 3px 0 0 #3b2a3f; }
+    .scene { position: relative; height: 180px; overflow: hidden; }
+    .scene canvas.cat { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 1; }
+    .wide { height: 120px; }
+    .tall { height: 300px; }
+  </style>
+</head>
+<body>
+  <h1>Laboratorio de fondos</h1>
+  <div class="grid" id="grid"></div>
+  <script src="js/cat-art.js"></script>
+  <script src="js/backgrounds.js"></script>
+  <script src="js/bg/indoor.js"></script>
+  <script src="js/bg/outdoor.js"></script>
+  <script>
+    var grid = document.getElementById('grid');
+    CatBG.list().forEach(function (s, i) {
+      ['', 'wide', 'tall'].forEach(function (size) {
+        var card = document.createElement('div');
+        card.className = 'card';
+        var sc = document.createElement('div');
+        sc.className = 'scene ' + size;
+        card.appendChild(sc);
+        CatBG.mount(sc, s.id);
+        var cv = document.createElement('canvas');
+        cv.className = 'cat';
+        sc.appendChild(cv);
+        if (window.CatArt) CatArt.mount(cv, CatArt.randomCat(), { scale: 4 });
+        var label = document.createElement('div');
+        label.textContent = s.emoji + ' ' + s.label + ' (' + s.id + ') ' + (size || 'normal');
+        card.appendChild(label);
+        var th = document.createElement('img');
+        th.src = CatBG.toDataURL(s.id, 48, 36);
+        th.style.cssText = 'width:96px;image-rendering:pixelated;display:block;margin-top:4px';
+        card.appendChild(th);
+        grid.appendChild(card);
+      });
+    });
+  </script>
+</body>
+</html>

@@ -525,12 +525,31 @@
     var myId = idOf(me);
     current = { container: container, state: state, myId: myId, sendMove: sendMove || function () {} };
     var key = state.id + ':' + state.type;
+    var plugin = plugins[state.type];
+    var api = { send: current.sendMove, icon: pixelSVG, escapeHTML: escapeHTML };
     if (container._gamesKey !== key || !container._gamesUI) {
       container._gamesKey = key;
-      container._gamesUI = state.type === 'hangman' ? buildHM(container) : buildTTT(container);
+      container.innerHTML = '';
+      if (plugin) container._gamesUI = plugin.build(container, api) || {};
+      else container._gamesUI = state.type === 'hangman' ? buildHM(container) : buildTTT(container);
     }
-    if (state.type === 'hangman') updateHM(container._gamesUI, state, myId);
+    if (plugin) plugin.update(container._gamesUI, state, myId, api);
+    else if (state.type === 'hangman') updateHM(container._gamesUI, state, myId);
     else updateTTT(container._gamesUI, state, myId);
+  }
+
+  /* ---------- Juegos enchufables (public/js/games/<id>.js) ---------- */
+  var plugins = {};
+  var names = { tictactoe: 'Gato', hangman: 'Ahorcado' };
+  var catalog = [
+    { id: 'tictactoe', name: 'Gato', btnClass: 'btn-pink' },
+    { id: 'hangman', name: 'Ahorcado', btnClass: 'btn-mint' }
+  ];
+  function register(p) {
+    if (!p || !p.id || plugins[p.id]) return;
+    plugins[p.id] = p;
+    names[p.id] = p.name;
+    catalog.push({ id: p.id, name: p.name, emoji: p.emoji, description: p.description, btnClass: p.btnClass || 'btn-peach', plugin: p });
   }
 
   function reset(container) {
@@ -544,6 +563,9 @@
     icon: pixelSVG,
     symbolIcon: function (sym) { return pixelSVG(iconForSymbol(sym)); },
     drawYarnScene: drawYarnScene,
-    names: { tictactoe: 'Gato', hangman: 'Ahorcado' }
+    names: names,
+    catalog: catalog,
+    register: register,
+    plugin: function (id) { return plugins[id] || null; }
   };
 })();

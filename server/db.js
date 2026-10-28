@@ -37,6 +37,13 @@ function makePg(url) {
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )`);
       await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx ON users (lower(username))');
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS friendships (
+          user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          friend_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (user_id, friend_id)
+        )`);
     },
     async createUser(username, passwordHash) {
       try {
@@ -77,12 +84,56 @@ function makePg(url) {
       );
       return rows.map(rowToUser);
     },
+    // Amistad mutua: se guardan ambas direcciones. Devuelve true si era nueva.
+    async addFriend(a, b) {
+      const { rowCount } = await pool.query(
+        `INSERT INTO friendships (user_id, friend_id) VALUES ($1, $2), ($2, $1)
+         ON CONFLICT DO NOTHING`,
+        [a, b]
+      );
+      return rowCount > 0;
+    },
+    async removeFriend(a, b) {
+      const { rowCount } = await pool.query(
+        'DELETE FROM friendships WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)',
+        [a, b]
+      );
+      return rowCount > 0;
+    },
+    async isFriend(a, b) {
+      const { rows } = await pool.query('SELECT 1 FROM friendships WHERE user_id = $1 AND friend_id = $2', [a, b]);
+      return rows.length > 0;
+    },
+    async listFriends(userId) {
+      const { rows } = await pool.query(
+        `SELECT u.* FROM friendships f JOIN users u ON u.id = f.friend_id
+         WHERE f.user_id = $1 ORDER BY lower(u.username)`,
+        [userId]
+      );
+      return rows.map(rowToUser);
+    },
+    async searchUsers(q, excludeId, limit = 10) {
+      const esc = String(q).toLowerCase().replace(/[\\%_]/g, (c) => '\\' + c);
+      const { rows } = await pool.query(
+        `SELECT * FROM users
+         WHERE id <> $2 AND lower(username) LIKE '%' || $1 || '%'
+         ORDER BY (lower(username) LIKE $1 || '%') DESC, lower(username) ASC
+         LIMIT $3`,
+        [esc, excludeId, limit]
+      );
+      return rows.map(rowToUser);
+    },
   };
 }
 
 function makeMemory() {
   const users = new Map();
+  const friends = new Map(); // userId -> Map<friendId, createdAt>
   let nextId = 1;
+  const friendSet = (id) => {
+    if (!friends.has(id)) friends.set(id, new Map());
+    return friends.get(id);
+  };
   const clone = (u) => (u ? { ...u, cat: u.cat ? { ...u.cat } : null } : null);
   return {
     mode: 'memory',
@@ -122,6 +173,43 @@ function makeMemory() {
     async leaderboard(limit = 50) {
       return [...users.values()]
         .sort((a, b) => b.wins - a.wins || b.draws - a.draws || a.losses - b.losses || a.id - b.id)
+        .slice(0, limit)
+        .map(clone);
+    },
+    async addFriend(a, b) {
+      a = Number(a); b = Number(b);
+      if (!users.has(a) || !users.has(b)) return false;
+      if (friendSet(a).has(b)) return false;
+      const now = new Date();
+      friendSet(a).set(b, now);
+      friendSet(b).set(a, now);
+      return true;
+    },
+    async removeFriend(a, b) {
+      a = Number(a); b = Number(b);
+      const had = friendSet(a).delete(b);
+      const had2 = friendSet(b).delete(a);
+      return had || had2;
+    },
+    async isFriend(a, b) {
+      return friendSet(Number(a)).has(Number(b));
+    },
+    async listFriends(userId) {
+      return [...friendSet(Number(userId)).keys()]
+        .map((id) => users.get(id))
+        .filter(Boolean)
+        .sort((x, y) => x.username.toLowerCase().localeCompare(y.username.toLowerCase()))
+        .map(clone);
+    },
+    async searchUsers(q, excludeId, limit = 10) {
+      const lq = String(q).toLowerCase();
+      return [...users.values()]
+        .filter((u) => u.id !== Number(excludeId) && u.username.toLowerCase().includes(lq))
+        .sort((x, y) => {
+          const px = x.username.toLowerCase().startsWith(lq) ? 0 : 1;
+          const py = y.username.toLowerCase().startsWith(lq) ? 0 : 1;
+          return px - py || x.username.toLowerCase().localeCompare(y.username.toLowerCase());
+        })
         .slice(0, limit)
         .map(clone);
     },

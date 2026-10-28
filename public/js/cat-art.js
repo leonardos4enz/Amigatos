@@ -151,8 +151,22 @@
       patternColor: '#b5602f',
       eyes: '#2a9d8f',
       accessory: 'bow',
-      accessoryColor: '#e63946'
+      accessoryColor: '#e63946',
+      bg: 'cuarto'
     };
+  }
+
+  // fondo (CatBG): se valida contra las escenas registradas si el núcleo está cargado
+  function normBg(bg) {
+    var B = typeof window !== 'undefined' ? window.CatBG : null;
+    if (typeof bg !== 'string' || !bg) return B && B.resolve ? B.resolve('cuarto') : 'cuarto';
+    if (B && B.resolve) return B.resolve(bg) || 'cuarto';
+    return /^[a-z0-9]{2,20}$/.test(bg) ? bg : 'cuarto';
+  }
+  function randomBg() {
+    var B = typeof window !== 'undefined' ? window.CatBG : null;
+    var l = B && B.list ? B.list() : [];
+    return l.length ? l[Math.floor(Math.random() * l.length)].id : 'cuarto';
   }
 
   function normalizeCat(cat) {
@@ -171,7 +185,8 @@
       patternColor: normHex(cat.patternColor) || d.patternColor,
       eyes: normHex(cat.eyes) || d.eyes,
       accessory: ACCESSORY_IDS.indexOf(cat.accessory) >= 0 ? cat.accessory : 'none',
-      accessoryColor: normHex(cat.accessoryColor) || d.accessoryColor
+      accessoryColor: normHex(cat.accessoryColor) || d.accessoryColor,
+      bg: normBg(cat.bg)
     };
   }
 
@@ -189,7 +204,8 @@
       return {
         name: pick(NAMES), breed: bid, fur: pr.fur, pattern: pr.pattern, patternColor: pr.patternColor, eyes: pr.eyes,
         accessory: Math.random() < 0.2 ? 'none' : pick(ACCESSORY_IDS.slice(1)),
-        accessoryColor: pick(OPTIONS.accentPalette)
+        accessoryColor: pick(OPTIONS.accentPalette),
+        bg: randomBg()
       };
     }
     var pattern = pick(PATTERN_IDS);
@@ -221,7 +237,8 @@
       patternColor: patternColor,
       eyes: pick(OPTIONS.eyePalette),
       accessory: Math.random() < 0.15 ? 'none' : pick(ACCESSORY_IDS.slice(1)),
-      accessoryColor: pick(OPTIONS.accentPalette)
+      accessoryColor: pick(OPTIONS.accentPalette),
+      bg: randomBg()
     };
   }
 
@@ -1080,7 +1097,7 @@
   function toDataURL(cat, scale) {
     scale = cleanScale(scale, 4);
     var c = normalizeCat(cat);
-    var key = JSON.stringify(c) + '@' + scale;
+    var key = JSON.stringify(c).replace(/,"bg":"[^"]*"/, '') + '@' + scale;
     if (urlCache[key]) return urlCache[key];
     if (typeof document === 'undefined') return '';
     var canvas = document.createElement('canvas');

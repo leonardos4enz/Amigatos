@@ -103,4 +103,8 @@ function applyMove(state, userId, move) {
   return { error: 'Jugada inválida.' };
 }
 
-module.exports = { create, applyMove, MAX_WRONG };
+function revealData(state) {
+  return { ...state.data, word: state.secret, masked: [...state.secret] };
+}
+
+module.exports = { create, applyMove, revealData, MAX_WRONG };

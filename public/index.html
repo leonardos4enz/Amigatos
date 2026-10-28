@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#ffe9f0">
   <title>Amigatos</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <meta name="theme-color" content="#ffc2d4">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -83,6 +85,27 @@
     <!-- 3. Sala -->
     <section class="screen hidden" data-screen="lobby" id="screen-lobby">
       <div class="lobby-grid">
+        <div class="panel friends-panel" id="friends-panel">
+          <div class="panel-title-row">
+            <h2 class="panel-title">Mis amigos 💕</h2>
+            <span class="friends-count hidden" id="friends-count"></span>
+          </div>
+          <div class="friend-search">
+            <label class="sr-only" for="friend-search-input">Buscar amigos por nombre de usuario</label>
+            <span class="friend-search-icon" aria-hidden="true">🔍</span>
+            <input class="input" id="friend-search-input" type="search" maxlength="20" autocomplete="off"
+                   autocapitalize="off" spellcheck="false" placeholder="Buscar por nombre de usuario…">
+          </div>
+          <ul class="search-results hidden" id="friend-search-results" aria-live="polite"></ul>
+          <ul class="player-list friend-list" id="friend-list"></ul>
+          <div class="empty friends-empty hidden" id="friends-empty">
+            <div class="empty-icon" aria-hidden="true">💌</div>
+            <p>Aún no tienes amigos. Busca a tu amiga por su nombre de usuario y agrégala.
+               Para jugar, las dos tienen que tener Amigatos abierto al mismo tiempo.</p>
+            <button class="btn btn-lilac btn-sm" id="btn-copy-link" type="button">📋 Copiar link del juego</button>
+          </div>
+        </div>
+
         <div class="panel me-panel">
           <div class="me-stage">
             <div class="me-cat-wrap" id="me-cat-wrap" title="¡Hazle cariño!">
@@ -108,7 +131,7 @@
         </div>
 
         <div class="panel online-panel">
-          <h2 class="panel-title"><span class="dot-online" aria-hidden="true"></span> Amigatos en línea</h2>
+          <h2 class="panel-title"><span class="dot-online" aria-hidden="true"></span> Conectados ahora</h2>
           <ul class="player-list" id="player-list"></ul>
           <div class="empty hidden" id="player-empty">
             <div class="empty-icon" aria-hidden="true">💤</div>
@@ -240,8 +263,15 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="js/cat-art.js"></script>
+  <script src="js/backgrounds.js"></script>
+  <script src="js/bg/indoor.js"></script>
+  <script src="js/bg/outdoor.js"></script>
   <script src="js/cat-creator.js"></script>
   <script src="js/games-ui.js"></script>
+  <!-- juegos enchufables: cada uno se registra con GamesUI.register(...) -->
+  <script src="js/games/connect4.js"></script>
+  <script src="js/games/memory.js"></script>
+  <script src="js/games/boxes.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

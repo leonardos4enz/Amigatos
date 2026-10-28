@@ -5,7 +5,9 @@
   /* ---------- Utilidades ---------- */
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
-  var GAME_NAMES = { tictactoe: 'Gato', hangman: 'Ahorcado' };
+  // se comparte con GamesUI: los juegos enchufables (js/games/*.js) añaden su nombre al registrarse
+  var GAME_NAMES = (window.GamesUI && window.GamesUI.names) || { tictactoe: 'Gato', hangman: 'Ahorcado' };
+  function gamePlugin(type) { return window.GamesUI && GamesUI.plugin ? GamesUI.plugin(type) : null; }
   var TOKEN_KEY = 'amigatos_token';
   var MUTE_KEY = 'amigatos_muted';
   var BASE_TITLE = 'Amigatos';
@@ -40,7 +42,12 @@
     rematchTheirs: false,
     wasDisconnected: false,
     authMode: 'login',
-    inviteCooldown: {}
+    inviteCooldown: {},
+    friends: [],
+    friendsLoaded: false,
+    searchQuery: '',
+    searchResults: null,
+    searchSeq: 0
   };
 
   /* ---------- Sonidos (WebAudio, sin archivos) ---------- */
@@ -279,6 +286,24 @@
         if (cv.width > 0) { hm.innerHTML = ''; hm.appendChild(cv); }
       } catch (e) { /* noop */ }
     }
+
+    // tarjetas de los juegos enchufables
+    var cards = $('.game-cards');
+    ((window.GamesUI && GamesUI.catalog) || []).forEach(function (g) {
+      if (!g.plugin || !cards) return;
+      var art = document.createElement('article');
+      art.className = 'game-card card-' + g.id;
+      var ic = document.createElement('div');
+      ic.className = 'game-card-icon';
+      ic.setAttribute('aria-hidden', 'true');
+      ic.textContent = g.emoji || '🎲';
+      var txt = document.createElement('div');
+      var h = document.createElement('h3'); h.textContent = g.name;
+      var p = document.createElement('p'); p.textContent = g.description || '';
+      txt.appendChild(h); txt.appendChild(p);
+      art.appendChild(ic); art.appendChild(txt);
+      cards.appendChild(art);
+    });
   }
 
   /* ---------- Auth ---------- */
@@ -344,6 +369,9 @@
 
   function onLoggedIn(user) {
     S.user = user;
+    S.friends = [];
+    S.friendsLoaded = false;
+    loadFriends();
     connectSocket();
     if (!user.cat) openCreator(true);
     else enterLobby();
@@ -358,6 +386,9 @@
     S.presence = [];
     S.invites = [];
     S.currentInvite = null;
+    S.friends = [];
+    S.friendsLoaded = false;
+    clearSearch();
     store.del(TOKEN_KEY);
     closeInviteModal();
     hideOver();
@@ -448,6 +479,7 @@
     showScreen('lobby');
     renderMe();
     renderPresence();
+    renderFriends();
     loadLeaderboard();
     showNextInvite();
   }
@@ -465,6 +497,7 @@
     if (S.screen === 'lobby') {
       if (S.meCat) { try { S.meCat.setCat(cat); } catch (e) { /* noop */ } }
       else S.meCat = mountCat($('#me-cat'), cat, { scale: 6, anim: 'idle' });
+      mountBg($('.me-stage'), cat.bg, 'me');
     }
     $('#me-catname').textContent = cat.name || 'Michi';
     $('#me-username').textContent = '@' + S.user.username;
@@ -524,22 +557,42 @@
     li.appendChild(av); li.appendChild(info); li.appendChild(badge);
 
     if (!isMe) {
-      var actions = document.createElement('div');
-      actions.className = 'player-actions';
-      [['tictactoe', 'Jugar Gato', 'btn-pink'], ['hangman', 'Jugar Ahorcado', 'btn-mint']].forEach(function (g) {
-        var b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'btn btn-sm ' + g[2];
-        b.textContent = g[1];
-        var cool = S.inviteCooldown[p.id] && S.inviteCooldown[p.id] > Date.now();
-        b.disabled = playing || !p.cat || cool || (S.game && S.game.status === 'playing');
-        if (playing) b.title = 'Está jugando ahora';
-        b.addEventListener('click', function () { sendInvite(p, g[0]); });
-        actions.appendChild(b);
-      });
+      var actions = inviteButtons(p, playing ? 'Está jugando ahora' : null);
+      if (!isFriend(p.id)) {
+        var add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'btn btn-sm btn-ghost btn-add-friend';
+        add.textContent = '+ Agregar';
+        add.title = 'Agregar a ' + p.username + ' a tus amigos';
+        add.addEventListener('click', function () { addFriend(p.username, add); });
+        actions.insertBefore(add, actions.firstChild);
+      } else if (!playing) {
+        badge.textContent = '💕 Amiga/o';
+      }
       li.appendChild(actions);
     }
     return li;
+  }
+
+  // Botones de invitación (uno por juego del catálogo, incluidos los enchufables).
+  // blockedReason != null → todos deshabilitados con ese tooltip.
+  function inviteButtons(p, blockedReason) {
+    var actions = document.createElement('div');
+    actions.className = 'player-actions';
+    var catalog = (window.GamesUI && GamesUI.catalog) || [{ id: 'tictactoe', name: 'Gato', btnClass: 'btn-pink' }, { id: 'hangman', name: 'Ahorcado', btnClass: 'btn-mint' }];
+    catalog.map(function (c) { return [c.id, (c.emoji ? c.emoji + ' ' : '') + c.name, c.btnClass]; }).forEach(function (g) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-sm ' + g[2];
+      b.textContent = g[1];
+      var cool = S.inviteCooldown[p.id] && S.inviteCooldown[p.id] > Date.now();
+      b.disabled = !!blockedReason || !p.cat || cool || (S.game && S.game.status === 'playing');
+      if (blockedReason) b.title = blockedReason;
+      else if (!p.cat) b.title = 'Todavía no ha creado su gato';
+      b.addEventListener('click', function () { sendInvite(p, g[0]); });
+      actions.appendChild(b);
+    });
+    return actions;
   }
 
   function sendInvite(p, game) {
@@ -549,7 +602,225 @@
     toast('Invitación de ' + GAME_NAMES[game] + ' enviada a ' + p.username + ' 💌', 'ok');
     S.inviteCooldown[p.id] = Date.now() + 4000;
     renderPresence();
-    setTimeout(function () { renderPresence(); }, 4100);
+    renderFriends();
+    setTimeout(function () { if (S.screen === 'lobby') { renderPresence(); renderFriends(); } }, 4100);
+  }
+
+  /* ---------- Amigos ---------- */
+  function isFriend(id) {
+    return S.friends.some(function (f) { return sameId(f.id, id); });
+  }
+
+  function loadFriends() {
+    if (!S.token) return;
+    var tok = S.token;
+    api('GET', '/api/friends').then(function (data) {
+      if (S.token !== tok) return;
+      S.friends = (data && data.friends) || [];
+      S.friendsLoaded = true;
+      if (S.screen === 'lobby') { renderFriends(); renderPresence(); renderSearchResults(); }
+    }).catch(function (err) {
+      if (err.status === 401) return logout('Tu sesión expiró. Vuelve a entrar.');
+      console.warn('No se pudieron cargar los amigos', err);
+    });
+  }
+
+  // Estado en vivo: se recalcula con la lista `presence` del socket.
+  function friendLive(f) {
+    var p = S.presence.find(function (x) { return sameId(x.id, f.id); });
+    if (!p) return Object.assign({}, f, { online: false, status: 'offline' });
+    return Object.assign({}, f, { online: true, status: p.status === 'playing' ? 'playing' : 'idle', cat: p.cat || f.cat });
+  }
+
+  function renderFriends() {
+    var list = $('#friend-list');
+    if (!list || !S.user) return;
+    list.innerHTML = '';
+    var order = { idle: 0, playing: 1, offline: 2 };
+    var friends = S.friends.map(friendLive).sort(function (a, b) {
+      return order[a.status] - order[b.status] || a.username.toLowerCase().localeCompare(b.username.toLowerCase());
+    });
+    friends.forEach(function (f) { list.appendChild(friendItem(f)); });
+    $('#friends-empty').classList.toggle('hidden', !S.friendsLoaded || friends.length > 0);
+    var cnt = $('#friends-count');
+    var on = friends.filter(function (f) { return f.online; }).length;
+    cnt.classList.toggle('hidden', !friends.length);
+    cnt.textContent = on + '/' + friends.length + ' en línea';
+  }
+
+  function friendItem(f) {
+    var li = document.createElement('li');
+    li.className = 'player friend friend-' + f.status;
+    var av = document.createElement('div');
+    av.className = 'player-avatar';
+    av.appendChild(avatarEl(f.cat, 2));
+    var info = document.createElement('div');
+    info.style.minWidth = '0';
+    var nm = document.createElement('div');
+    nm.className = 'player-name';
+    var dot = document.createElement('span');
+    dot.className = 'friend-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    nm.appendChild(dot);
+    nm.appendChild(document.createTextNode(f.username));
+    var cn = document.createElement('span');
+    cn.className = 'player-cat';
+    var pb = breedInfo(f.cat);
+    cn.textContent = f.cat && f.cat.name ? '🐾 ' + f.cat.name + (pb ? ' · ' + pb.label : '') : 'Sin gato todavía';
+    info.appendChild(nm); info.appendChild(cn);
+    var badge = document.createElement('span');
+    badge.className = 'badge ' + (f.status === 'idle' ? 'badge-idle' : f.status === 'playing' ? 'badge-playing' : 'badge-offline');
+    badge.textContent = f.status === 'idle' ? 'En línea' : f.status === 'playing' ? 'Jugando' : 'Desconectada/o';
+    li.appendChild(av); li.appendChild(info); li.appendChild(badge);
+
+    var reason = f.status === 'offline' ? 'Tiene que abrir Amigatos para poder jugar'
+      : f.status === 'playing' ? 'Está jugando ahora' : null;
+    var actions = inviteButtons(f, reason);
+    var rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'btn btn-sm btn-ghost btn-remove-friend';
+    rm.textContent = 'Quitar';
+    rm.title = 'Quitar a ' + f.username + ' de tus amigos';
+    rm.addEventListener('click', function () { removeFriend(f); });
+    actions.appendChild(rm);
+    li.appendChild(actions);
+    if (f.status === 'offline') {
+      var note = document.createElement('p');
+      note.className = 'friend-note';
+      note.textContent = 'Cuando ' + f.username + ' abra Amigatos podrás invitarle a jugar.';
+      li.appendChild(note);
+    }
+    return li;
+  }
+
+  function addFriend(username, btn) {
+    if (btn) btn.disabled = true;
+    api('POST', '/api/friends', { username: username }).then(function (data) {
+      var f = data && data.friend;
+      if (f && !isFriend(f.id)) S.friends.push(f);
+      S.friendsLoaded = true;
+      Sound.play('hit');
+      toast('¡' + (f ? f.username : username) + ' ahora es tu amiga/o! 💕', 'ok');
+      renderFriends(); renderPresence(); renderSearchResults();
+    }).catch(function (err) {
+      if (err.status === 401) return logout('Tu sesión expiró. Vuelve a entrar.');
+      toast(err.message, 'error');
+      if (btn) btn.disabled = false;
+      if (err.status === 409) loadFriends();
+    });
+  }
+
+  function removeFriend(f) {
+    confirmPixel('¿Quitar a ' + f.username + ' de tus amigos?', 'Quitar', 'Cancelar').then(function (ok) {
+      if (!ok) return;
+      api('DELETE', '/api/friends/' + encodeURIComponent(f.id)).then(function () {
+        S.friends = S.friends.filter(function (x) { return !sameId(x.id, f.id); });
+        toast(f.username + ' ya no está en tus amigos.', 'info');
+        renderFriends(); renderPresence(); renderSearchResults();
+      }).catch(function (err) {
+        if (err.status === 401) return logout('Tu sesión expiró. Vuelve a entrar.');
+        toast(err.message, 'error');
+      });
+    });
+  }
+
+  var searchTimer = null;
+  function onSearchInput() {
+    var q = $('#friend-search-input').value.trim();
+    S.searchQuery = q;
+    if (searchTimer) clearTimeout(searchTimer);
+    if (!q) { S.searchResults = null; S.searchSeq++; renderSearchResults(); return; }
+    searchTimer = setTimeout(function () { runSearch(q); }, 250);
+  }
+
+  function runSearch(q) {
+    var seq = ++S.searchSeq;
+    api('GET', '/api/users/search?q=' + encodeURIComponent(q)).then(function (data) {
+      if (seq !== S.searchSeq) return;
+      S.searchResults = (data && data.users) || [];
+      renderSearchResults();
+    }).catch(function (err) {
+      if (seq !== S.searchSeq) return;
+      if (err.status === 401) return logout('Tu sesión expiró. Vuelve a entrar.');
+      S.searchResults = [];
+      renderSearchResults(err.message);
+    });
+  }
+
+  function clearSearch() {
+    if (searchTimer) clearTimeout(searchTimer);
+    var inp = $('#friend-search-input');
+    if (inp) inp.value = '';
+    S.searchQuery = '';
+    S.searchResults = null;
+    S.searchSeq++;
+    renderSearchResults();
+  }
+
+  function renderSearchResults(errMsg) {
+    var ul = $('#friend-search-results');
+    if (!ul) return;
+    ul.innerHTML = '';
+    if (!S.searchQuery || S.searchResults === null) { ul.classList.add('hidden'); return; }
+    ul.classList.remove('hidden');
+    if (!S.searchResults.length) {
+      var li0 = document.createElement('li');
+      li0.className = 'search-empty';
+      li0.textContent = (typeof errMsg === 'string' && errMsg) ||
+        ('No encontré a nadie llamado "' + S.searchQuery + '". Revisa cómo se escribe su usuario 🐾');
+      ul.appendChild(li0);
+      return;
+    }
+    S.searchResults.forEach(function (u) {
+      var li = document.createElement('li');
+      li.className = 'search-row';
+      var av = document.createElement('span');
+      av.className = 'search-avatar';
+      av.appendChild(avatarEl(u.cat, 1));
+      var nm = document.createElement('span');
+      nm.className = 'search-name';
+      nm.textContent = u.username;
+      var small = document.createElement('small');
+      small.textContent = u.cat && u.cat.name ? '🐾 ' + u.cat.name : 'Sin gato todavía';
+      nm.appendChild(small);
+      li.appendChild(av); li.appendChild(nm);
+      if (isFriend(u.id)) {
+        var tag = document.createElement('span');
+        tag.className = 'badge badge-me';
+        tag.textContent = 'Ya es tu amiga/o';
+        li.appendChild(tag);
+      } else {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-sm btn-pink';
+        b.textContent = '+ Agregar';
+        b.addEventListener('click', function () { addFriend(u.username, b); });
+        li.appendChild(b);
+      }
+      ul.appendChild(li);
+    });
+  }
+
+  function copyGameLink() {
+    var url = location.origin;
+    function ok() { toast('¡Link copiado! Mándaselo a tu amiga: ' + url, 'ok', 4500); }
+    function fallback() {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = url;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var done = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (done) return ok();
+      } catch (e) { /* noop */ }
+      toast('Copia este link: ' + url, 'info', 6000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(ok, fallback);
+    } else fallback();
   }
 
   function loadLeaderboard() {
@@ -686,6 +957,9 @@
     replaceCanvas(L); replaceCanvas(R);
     S.fighters.left = mountCat($('canvas', L), me.cat || S.user.cat || FALLBACK_CAT, { scale: 3, anim: 'idle' });
     S.fighters.right = mountCat($('canvas', R), opp.cat || FALLBACK_CAT, { scale: 3, anim: 'idle', flip: true });
+    // cada gato juega delante de su propio fondo
+    mountBg($('.fighter-cat', L), (me.cat || S.user.cat || {}).bg, 'left');
+    mountBg($('.fighter-cat', R), (opp.cat || {}).bg, 'right');
     $('.fighter-name', L).textContent = 'Tú';
     $('.fighter-name', R).textContent = opp.username;
     $('#game-label').textContent = GAME_NAMES[state.type] || 'Juego';
@@ -699,6 +973,18 @@
   function replaceCanvas(fighterEl) {
     var wrap = $('.fighter-cat', fighterEl);
     wrap.innerHTML = '<canvas class="pixel-canvas"></canvas>';
+  }
+
+  // fondos pixel art (CatBG); S.bgs guarda los controladores por lugar ('me', 'left', 'right')
+  function mountBg(el, bg, slot) {
+    S.bgs = S.bgs || {};
+    if (!el || !window.CatBG || !CatBG.list().length) return;
+    try {
+      if (S.bgs[slot] && S.bgs[slot].el === el && el.querySelector('.catbg-canvas')) { S.bgs[slot].ctl.set(bg); return; }
+      if (S.bgs[slot]) S.bgs[slot].ctl.destroy();
+      el.classList.add('has-bg');
+      S.bgs[slot] = { el: el, ctl: CatBG.mount(el, bg) };
+    } catch (e) { console.error(e); }
   }
 
   function renderGame(state) {
@@ -719,6 +1005,8 @@
 
     function scoreHTML(p) {
       if (!p) return '';
+      var plug = gamePlugin(state.type);
+      if (plug && plug.scoreHTML) return plug.scoreHTML(p, state);
       if (state.type === 'tictactoe') {
         var sym = state.data && state.data.symbols && state.data.symbols[String(p.id)];
         return (window.GamesUI ? GamesUI.symbolIcon(sym) : '') + '<span>' + (sym === 'O' ? 'Pez' : 'Huella') + '</span>';
@@ -749,7 +1037,19 @@
   function updateGame(prev, state) {
     renderGame(state);
     // reacciones de los gatos + sonidos
-    if (state.type === 'tictactoe') {
+    var plug = gamePlugin(state.type);
+    if (plug) {
+      if (plug.react) {
+        try {
+          plug.react(prev, state, {
+            myId: myId(),
+            happy: function (uid) { playCtl(ctlFor(uid), 'happy'); },
+            sad: function (uid) { playCtl(ctlFor(uid), 'sad'); },
+            sound: function (name) { Sound.play(name); } // 'move' | 'hit' | 'miss' | 'turn' | 'win' | 'click'
+          });
+        } catch (e) { console.error(e); }
+      }
+    } else if (state.type === 'tictactoe') {
       var pb = (prev.data && prev.data.board) || [], nb = (state.data && state.data.board) || [];
       for (var i = 0; i < 9; i++) {
         if (pb[i] == null && nb[i] != null) {
@@ -820,6 +1120,10 @@
       hanged: 'El ovillo se deshizo por completo 🧶. ' + (draw ? 'Empatados en puntos.' : (won ? '¡Pero tenías más puntos!' : oppName + ' tenía más puntos.'))
     };
     var subText = reasons[state.reason] || (won ? '¡Bien jugado!' : draw ? 'Buena partida.' : '¡La próxima será!');
+    var plug = gamePlugin(state.type);
+    if (plug && plug.overText && state.reason !== 'abandon') {
+      try { subText = plug.overText(state, { won: won, draw: draw, oppName: oppName, myId: me }) || subText; } catch (e) { console.error(e); }
+    }
     if (state.type === 'hangman' && state.data && state.data.scores) {
       var mine = state.data.scores[String(me)] || 0;
       var theirs = opp ? (state.data.scores[String(opp.id)] || 0) : 0;
@@ -1026,6 +1330,7 @@
       $('#conn-banner').classList.add('hidden');
       if (S.wasDisconnected) {
         toast('¡Conectado de nuevo! 🐾', 'ok');
+        loadFriends();
         if (S.game && S.game.status === 'playing') {
           // si el server sigue teniendo la partida (otra pestaña) nos reenvía game:state;
           // si no, la dio por abandonada al desconectarnos.
@@ -1057,8 +1362,12 @@
 
     sock.on('presence', function (list) {
       S.presence = Array.isArray(list) ? list : [];
-      if (S.screen === 'lobby') renderPresence();
+      if (S.screen === 'lobby') { renderPresence(); renderFriends(); }
       if (S.overShownFor) updateRematchUI();
+    });
+    sock.on('friends:updated', function () {
+      loadFriends();
+      if (S.searchQuery) runSearch(S.searchQuery);
     });
     sock.on('invite:received', onInviteReceived);
     sock.on('invite:declined', function (d) {
@@ -1100,6 +1409,16 @@
       confirmPixel('¿Cerrar sesión?', 'Salir', 'Quedarme').then(function (ok) { if (ok) logout('¡Hasta pronto! 👋'); });
     });
     $('#btn-lb-refresh').addEventListener('click', loadLeaderboard);
+    $('#friend-search-input').addEventListener('input', onSearchInput);
+    $('#friend-search-input').addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') clearSearch();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var q = this.value.trim();
+        if (q) { if (searchTimer) clearTimeout(searchTimer); S.searchQuery = q; runSearch(q); }
+      }
+    });
+    $('#btn-copy-link').addEventListener('click', copyGameLink);
     $('#me-cat-wrap').addEventListener('click', function () {
       playCtl(S.meCat, 'happy');
       Sound.play('msg');
