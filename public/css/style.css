@@ -728,6 +728,33 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 }
 .modal { width: min(100%, 420px); text-align: center; padding: 22px 18px; }
 .modal-sm { width: min(100%, 360px); }
+
+/* perfil flotante */
+.profile-link { cursor: pointer; transition: transform .08s steps(2); }
+.profile-link:hover { transform: translateY(-2px) scale(1.06); }
+.profile-link:focus-visible { outline: 3px dashed var(--pink-d); outline-offset: 3px; }
+.profile-modal { position: relative; max-height: calc(100vh - 32px); overflow-y: auto; }
+.profile-close {
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  width: 34px; height: 34px; border: 0; cursor: pointer; font: inherit; font-size: 16px;
+  background: var(--cream); color: var(--ink);
+  box-shadow: 0 -3px 0 0 var(--ink), 0 3px 0 0 var(--ink), -3px 0 0 0 var(--ink), 3px 0 0 0 var(--ink);
+}
+.profile-close:hover { background: var(--pink); }
+.profile-stage {
+  position: relative; display: grid; place-items: center; padding: 26px 0 12px; margin: 3px; overflow: hidden;
+  background: var(--sky);
+  box-shadow: 0 -3px 0 0 var(--ink), 0 3px 0 0 var(--ink), -3px 0 0 0 var(--ink), 3px 0 0 0 var(--ink);
+}
+.profile-stage canvas.pixel-canvas { position: relative; z-index: 1; width: 160px; }
+.profile-user { margin: 0 0 6px; color: var(--ink-2); display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.profile-breed { margin: 0 0 10px; font-weight: 700; }
+.profile-modal .me-story { margin-top: 4px; }
+.profile-modal .stats { margin: 12px 0 6px; }
+.profile-note { margin: 10px 0 8px; }
+#profile-invites .player-actions { justify-content: center; }
+#profile-friend-row { margin-top: 12px; justify-content: center; }
+#profile-friend-row:empty { display: none; }
 .modal-cat { display: grid; place-items: center; margin-bottom: 4px; }
 .modal-cat canvas { width: 128px; animation: bob 1s steps(2) infinite; }
 .modal-title { font-family: var(--font-pixel); font-size: 16px; margin: 10px 0; line-height: 1.5; }

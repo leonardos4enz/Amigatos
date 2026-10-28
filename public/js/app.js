@@ -540,6 +540,7 @@
     var av = document.createElement('div');
     av.className = 'player-avatar';
     av.appendChild(avatarEl(p.cat, 2));
+    profileLink(av, p.username);
     var info = document.createElement('div');
     info.style.minWidth = '0';
     var nm = document.createElement('div');
@@ -655,6 +656,7 @@
     var av = document.createElement('div');
     av.className = 'player-avatar';
     av.appendChild(avatarEl(f.cat, 2));
+    profileLink(av, f.username);
     var info = document.createElement('div');
     info.style.minWidth = '0';
     var nm = document.createElement('div');
@@ -725,6 +727,99 @@
     });
   }
 
+  /* ---------- Perfil flotante (al picar la foto de alguien) ---------- */
+  function profileLink(el, username) {
+    if (!el || !username) return el;
+    el.classList.add('profile-link');
+    el.setAttribute('role', 'button');
+    el.setAttribute('tabindex', '0');
+    el.title = 'Ver perfil de ' + username;
+    el.addEventListener('click', function (e) { e.stopPropagation(); openProfile(username); });
+    el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openProfile(username); }
+    });
+    return el;
+  }
+
+  function openProfile(username) {
+    api('GET', '/api/profile/' + encodeURIComponent(username)).then(function (data) {
+      var p = data && data.profile;
+      if (!p) return;
+      S.profileUser = p.username;
+      renderProfile(p);
+      $('#profile-modal').classList.remove('hidden');
+      Sound.play('click');
+      $('#profile-close').focus();
+    }).catch(function (err) {
+      if (err.status === 401) return logout('Tu sesión expiró. Vuelve a entrar.');
+      toast(err.message || 'No se pudo abrir el perfil.', 'error');
+    });
+  }
+
+  function renderProfile(p) {
+    var live = p.isMe ? p : friendLive(p); // el estado en vivo sale de `presence`
+    var cat = (p.isMe && S.user.cat) || live.cat || FALLBACK_CAT;
+    destroyCtl(S.profileCat);
+    var stage = $('#profile-stage');
+    stage.innerHTML = '<canvas id="profile-cat" class="pixel-canvas"></canvas>';
+    S.profileCat = mountCat($('#profile-cat'), cat, { scale: 5, anim: 'happy' });
+    if (S.bgs && S.bgs.profile) { S.bgs.profile.ctl.destroy(); S.bgs.profile = null; }
+    mountBg(stage, cat.bg, 'profile');
+
+    $('#profile-catname').textContent = cat.name || 'Michi';
+    $('#profile-username').textContent = '@' + p.username + (p.isMe ? ' (tú)' : '');
+    var st = $('#profile-status');
+    st.className = 'badge ' + (p.isMe ? 'badge-me' : 'badge-' + live.status);
+    st.textContent = p.isMe ? 'Tú' : live.status === 'idle' ? 'En línea' : live.status === 'playing' ? 'Jugando' : 'Desconectada/o';
+
+    var breed = breedInfo(cat);
+    $('#profile-breed').textContent = breed ? '🐾 ' + breed.label : '';
+    $('#profile-story').hidden = !(breed && breed.story);
+    if (breed && breed.story) {
+      $('#profile-story-title').textContent = '📜 La historia del ' + breed.label;
+      $('#profile-story-text').textContent = breed.story;
+    }
+    $('#profile-wins').textContent = p.wins || 0;
+    $('#profile-losses').textContent = p.losses || 0;
+    $('#profile-draws').textContent = p.draws || 0;
+
+    // invitar a jugar (solo si está en línea y libre)
+    var inv = $('#profile-invites');
+    inv.innerHTML = '';
+    var note = '';
+    if (!p.isMe) {
+      var blocked = live.status === 'offline' ? 'No está conectada/o' : live.status === 'playing' ? 'Está jugando ahora' : null;
+      if (live.status === 'offline') note = 'Cuando ' + p.username + ' abra Amigatos podrás invitarle a jugar.';
+      else if (live.status === 'playing') note = p.username + ' está en una partida. ¡Espera a que termine!';
+      else note = '¡Invítale a jugar!';
+      var btns = inviteButtons(live, blocked);
+      btns.addEventListener('click', function (e) { if (e.target.closest('button') && !e.target.closest('button').disabled) closeProfile(); });
+      inv.appendChild(btns);
+    }
+    $('#profile-note').textContent = note;
+
+    var row = $('#profile-friend-row');
+    row.innerHTML = '';
+    if (!p.isMe) {
+      var friendNow = isFriend(p.id);
+      var fb = document.createElement('button');
+      fb.type = 'button';
+      fb.className = 'btn btn-sm ' + (friendNow ? 'btn-ghost' : 'btn-pink');
+      fb.textContent = friendNow ? 'Quitar de amigos' : '+ Agregar amiga/o';
+      fb.addEventListener('click', function () {
+        if (friendNow) { closeProfile(); removeFriend(p); }
+        else { addFriend(p.username, fb); setTimeout(function () { if (S.profileUser === p.username) openProfile(p.username); }, 600); }
+      });
+      row.appendChild(fb);
+    }
+  }
+
+  function closeProfile() {
+    $('#profile-modal').classList.add('hidden');
+    destroyCtl(S.profileCat); S.profileCat = null;
+    S.profileUser = null;
+  }
+
   var searchTimer = null;
   function onSearchInput() {
     var q = $('#friend-search-input').value.trim();
@@ -778,6 +873,7 @@
       var av = document.createElement('span');
       av.className = 'search-avatar';
       av.appendChild(avatarEl(u.cat, 1));
+      profileLink(av, u.username);
       var nm = document.createElement('span');
       nm.className = 'search-name';
       nm.textContent = u.username;
@@ -804,7 +900,7 @@
 
   function copyGameLink() {
     var url = location.origin;
-    function ok() { toast('¡Link copiado! Mándaselo a tu amiga: ' + url, 'ok', 4500); }
+    function ok() { toast('¡Link copiado! Compártelo con tus amigos: ' + url, 'ok', 4500); }
     function fallback() {
       try {
         var ta = document.createElement('textarea');
@@ -842,6 +938,7 @@
         var av = document.createElement('span');
         av.className = 'lb-avatar';
         av.appendChild(avatarEl(p.cat, 1));
+        profileLink(av, p.username);
         var nm = document.createElement('span');
         nm.className = 'lb-name';
         nm.textContent = p.username;
@@ -1410,6 +1507,20 @@
       confirmPixel('¿Cerrar sesión?', 'Salir', 'Quedarme').then(function (ok) { if (ok) logout('¡Hasta pronto! 👋'); });
     });
     $('#btn-lb-refresh').addEventListener('click', loadLeaderboard);
+    // perfil flotante: cerrar con ✕, clic fuera o Esc
+    $('#profile-close').addEventListener('click', closeProfile);
+    $('#profile-modal').addEventListener('click', function (e) { if (e.target === this) closeProfile(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !$('#profile-modal').classList.contains('hidden')) closeProfile();
+    });
+    // el gato rival en la barra VS abre su perfil
+    var oppCat = $('.fighter-cat', $('#fighter-right'));
+    oppCat.classList.add('profile-link');
+    oppCat.title = 'Ver perfil';
+    oppCat.addEventListener('click', function () {
+      var opp = S.game && opponentOf(S.game);
+      if (opp && opp.username) openProfile(opp.username);
+    });
     $('#friend-search-input').addEventListener('input', onSearchInput);
     $('#friend-search-input').addEventListener('keydown', function (e) {
       if (e.key === 'Escape') clearSearch();

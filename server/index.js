@@ -187,6 +187,14 @@ app.get('/api/users/search', wrap(auth), wrap(async (req, res) => {
   res.json({ users: found.map((u) => ({ id: u.id, username: u.username, cat: u.cat || null, isFriend: ids.has(u.id) })) });
 }));
 
+// Perfil público (para la tarjeta flotante al picar la foto de alguien)
+app.get('/api/profile/:username', wrap(auth), wrap(async (req, res) => {
+  const u = await db.findByUsername(String(req.params.username || '').slice(0, 20));
+  if (!u) return res.status(404).json({ error: 'No existe ese usuario' });
+  const isMe = u.id === req.user.id;
+  res.json({ profile: { ...friendView(u), isMe, isFriend: isMe ? false : await db.isFriend(req.user.id, u.id) } });
+}));
+
 app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));
 
 // eslint-disable-next-line no-unused-vars

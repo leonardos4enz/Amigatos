@@ -41,7 +41,7 @@
             <span class="hero-heart">♥</span>
             <canvas id="hero-cat-b" class="pixel-canvas"></canvas>
           </div>
-          <p class="hero-text">Diseña tu gatito, invita a tu amigo y jueguen juntos aunque estén lejos.</p>
+          <p class="hero-text">Diseña tu gatito, invita a tus amigos y jueguen juntos aunque estén lejos.</p>
         </div>
 
         <div class="panel auth-panel">
@@ -100,8 +100,8 @@
           <ul class="player-list friend-list" id="friend-list"></ul>
           <div class="empty friends-empty hidden" id="friends-empty">
             <div class="empty-icon" aria-hidden="true">💌</div>
-            <p>Aún no tienes amigos. Busca a tu amiga por su nombre de usuario y agrégala.
-               Para jugar, las dos tienen que tener Amigatos abierto al mismo tiempo.</p>
+            <p>Aún no tienes amigos. Busca a otros jugadores por su nombre de usuario y agrégalos.
+               Para jugar juntos, ambos tienen que tener Amigatos abierto al mismo tiempo.</p>
             <button class="btn btn-lilac btn-sm" id="btn-copy-link" type="button">📋 Copiar link del juego</button>
           </div>
         </div>
@@ -135,7 +135,7 @@
           <ul class="player-list" id="player-list"></ul>
           <div class="empty hidden" id="player-empty">
             <div class="empty-icon" aria-hidden="true">💤</div>
-            <p>Solo tú por aquí… ¡Comparte el enlace con tu amigo para jugar juntos!</p>
+            <p>Solo tú por aquí… ¡Comparte el enlace con tus amigos para jugar juntos!</p>
           </div>
         </div>
 
@@ -256,6 +256,30 @@
         <button class="btn btn-ghost" id="confirm-no" type="button">Cancelar</button>
         <button class="btn btn-peach" id="confirm-yes" type="button">Sí</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-catname">
+    <div class="modal panel pop-in profile-modal">
+      <button class="profile-close" id="profile-close" type="button" aria-label="Cerrar">✕</button>
+      <div class="profile-stage" id="profile-stage">
+        <canvas id="profile-cat" class="pixel-canvas"></canvas>
+      </div>
+      <h2 class="modal-title" id="profile-catname">Michi</h2>
+      <p class="profile-user"><span id="profile-username">@usuario</span> <span class="badge" id="profile-status"></span></p>
+      <p class="profile-breed" id="profile-breed"></p>
+      <div class="me-story" id="profile-story" hidden>
+        <p class="me-story-title" id="profile-story-title"></p>
+        <p class="me-story-text" id="profile-story-text"></p>
+      </div>
+      <div class="stats">
+        <div class="stat stat-win"><span class="stat-num" id="profile-wins">0</span><span class="stat-label">Victorias</span></div>
+        <div class="stat stat-loss"><span class="stat-num" id="profile-losses">0</span><span class="stat-label">Derrotas</span></div>
+        <div class="stat stat-draw"><span class="stat-num" id="profile-draws">0</span><span class="stat-label">Empates</span></div>
+      </div>
+      <p class="profile-note hint" id="profile-note"></p>
+      <div id="profile-invites"></div>
+      <div class="row-buttons" id="profile-friend-row"></div>
     </div>
   </div>
 
