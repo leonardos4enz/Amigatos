@@ -452,6 +452,13 @@
     showNextInvite();
   }
 
+  function breedInfo(cat) {
+    try {
+      var list = (window.CatArt && CatArt.OPTIONS.breeds) || [];
+      return list.filter(function (b) { return cat && b.id === cat.breed; })[0] || null;
+    } catch (e) { return null; }
+  }
+
   function renderMe() {
     if (!S.user) return;
     var cat = S.user.cat || FALLBACK_CAT;
@@ -461,6 +468,12 @@
     }
     $('#me-catname').textContent = cat.name || 'Michi';
     $('#me-username').textContent = '@' + S.user.username;
+    var breed = breedInfo(cat);
+    $('#me-story').hidden = !(breed && breed.story);
+    if (breed && breed.story) {
+      $('#me-story-title').textContent = '📜 ' + breed.label;
+      $('#me-story-text').textContent = breed.story;
+    }
     setStat('#stat-wins', S.user.wins);
     setStat('#stat-losses', S.user.losses);
     setStat('#stat-draws', S.user.draws);
@@ -500,7 +513,9 @@
     nm.textContent = p.username + (isMe ? ' (tú)' : '');
     var cn = document.createElement('span');
     cn.className = 'player-cat';
-    cn.textContent = p.cat && p.cat.name ? '🐾 ' + p.cat.name : 'Sin gato todavía';
+    var pb = breedInfo(p.cat);
+    cn.textContent = p.cat && p.cat.name ? '🐾 ' + p.cat.name + (pb ? ' · ' + pb.label : '') : 'Sin gato todavía';
+    if (pb && pb.story) cn.title = pb.story;
     info.appendChild(nm); info.appendChild(cn);
     var badge = document.createElement('span');
     var playing = p.status === 'playing';

@@ -19,7 +19,8 @@
       { id: 'spots', label: 'Manchas' },
       { id: 'tuxedo', label: 'Esmoquin' },
       { id: 'calico', label: 'Tricolor' },
-      { id: 'siamese', label: 'Siamés' }
+      { id: 'siamese', label: 'Siamés' },
+      { id: 'tortie', label: 'Carey' }
     ],
     accessories: [
       { id: 'none', label: 'Nada' },
@@ -72,20 +73,36 @@
     ]
   };
 
+  // `story`: leyenda o dato bonito de cada raza (se muestra en el creador y en la sala)
   OPTIONS.breeds = [
-    { id: 'comun', label: 'Común', preset: { fur: '#b9b3ad', pattern: 'tabby', patternColor: '#6e6660', eyes: '#57cc99' } },
-    { id: 'naranja', label: 'Atigrado Naranja', preset: { fur: '#f4a261', pattern: 'tabby', patternColor: '#b5602f', eyes: '#2a9d8f' } },
-    { id: 'siames', label: 'Siamés', preset: { fur: '#f3dcb5', pattern: 'siamese', patternColor: '#5e4034', eyes: '#3a86ff' } },
-    { id: 'persa', label: 'Persa', preset: { fur: '#f7f3ee', pattern: 'solid', patternColor: '#e8d8c8', eyes: '#e08a2e' } },
-    { id: 'mainecoon', label: 'Maine Coon', preset: { fur: '#9b6a45', pattern: 'tabby', patternColor: '#4f3426', eyes: '#e9c46a' } },
-    { id: 'sphynx', label: 'Esfinge', preset: { fur: '#f2c6c0', pattern: 'solid', patternColor: '#d99a9a', eyes: '#57cc99' } },
-    { id: 'scottish', label: 'Scottish Fold', preset: { fur: '#b9b3ad', pattern: 'solid', patternColor: '#8e98a8', eyes: '#f6bd60' } },
-    { id: 'bengala', label: 'Bengala', preset: { fur: '#e9b464', pattern: 'spots', patternColor: '#5e3a1f', eyes: '#57cc99' } },
-    { id: 'ragdoll', label: 'Ragdoll', preset: { fur: '#f7f3ee', pattern: 'siamese', patternColor: '#8e98a8', eyes: '#4cc9f0' } },
-    { id: 'british', label: 'British Shorthair', preset: { fur: '#8e98a8', pattern: 'solid', patternColor: '#6c7686', eyes: '#e08a2e' } },
-    { id: 'azulruso', label: 'Azul Ruso', preset: { fur: '#7f8fa6', pattern: 'solid', patternColor: '#64748b', eyes: '#57cc99' } },
-    { id: 'angora', label: 'Angora Turco', preset: { fur: '#f7f3ee', pattern: 'solid', patternColor: '#f3dcb5', eyes: '#4cc9f0' } },
-    { id: 'bombay', label: 'Bombay', preset: { fur: '#2f2a36', pattern: 'solid', patternColor: '#4a4553', eyes: '#e08a2e' } }
+    { id: 'comun', label: 'Común', preset: { fur: '#b9b3ad', pattern: 'tabby', patternColor: '#6e6660', eyes: '#57cc99' },
+      story: 'El gato de todos los barrios. Dicen que la "M" de su frente la dejó una madre que, al acariciarlo, le marcó para siempre que era amado.' },
+    { id: 'carey', label: 'Carey', preset: { fur: '#2f2a36', pattern: 'tortie', patternColor: '#d9773a', eyes: '#e9c46a' },
+      story: 'Cuenta la leyenda que el Sol y la Luna se enamoraron y, para estar juntos, se fundieron en un solo gato: la noche y el fuego en el mismo pelaje. Por eso trae suerte y tiene un carácter único.' },
+    { id: 'naranja', label: 'Atigrado Naranja', preset: { fur: '#f4a261', pattern: 'tabby', patternColor: '#b5602f', eyes: '#2a9d8f' },
+      story: 'Se dice que todos los gatos naranjas comparten una sola neurona y se turnan para usarla. Lo que les falta de cálculo les sobra de cariño.' },
+    { id: 'siames', label: 'Siamés', preset: { fur: '#f3dcb5', pattern: 'siamese', patternColor: '#5e4034', eyes: '#3a86ff' },
+      story: 'Guardianes de los templos de Siam. La leyenda dice que su cola torcida viene de sujetar con ella el anillo de una princesa mientras se bañaba.' },
+    { id: 'persa', label: 'Persa', preset: { fur: '#f7f3ee', pattern: 'solid', patternColor: '#e8d8c8', eyes: '#e08a2e' },
+      story: 'Viajó en caravanas desde la antigua Persia. Un cuento dice que un mago lo creó con el humo de su hoguera y el brillo de dos estrellas.' },
+    { id: 'mainecoon', label: 'Maine Coon', preset: { fur: '#9b6a45', pattern: 'tabby', patternColor: '#4f3426', eyes: '#e9c46a' },
+      story: 'El gigante gentil de los bosques de Maine. Se cuenta que llegó en los barcos de María Antonieta, que soñaba con huir con sus gatos a América.' },
+    { id: 'sphynx', label: 'Esfinge', preset: { fur: '#f2c6c0', pattern: 'solid', patternColor: '#d99a9a', eyes: '#57cc99' },
+      story: 'Sin pelo pero con el corazón más calientito. Lleva el nombre de la Esfinge de Egipto, que guarda los secretos del desierto.' },
+    { id: 'scottish', label: 'Scottish Fold', preset: { fur: '#b9b3ad', pattern: 'solid', patternColor: '#8e98a8', eyes: '#f6bd60' },
+      story: 'Todo empezó con Susie, una gatita blanca de orejas dobladas que vivía en una granja de Escocia. Parece un búho y escucha con todo el corazón.' },
+    { id: 'bengala', label: 'Bengala', preset: { fur: '#e9b464', pattern: 'spots', patternColor: '#5e3a1f', eyes: '#57cc99' },
+      story: 'Lleva en sus rosetas el recuerdo del leopardo de la selva. Le encanta el agua y trepar a lo más alto para vigilar su reino.' },
+    { id: 'ragdoll', label: 'Ragdoll', preset: { fur: '#f7f3ee', pattern: 'siamese', patternColor: '#8e98a8', eyes: '#4cc9f0' },
+      story: '"Muñeca de trapo": se deja caer en tus brazos completamente relajado. Dicen que sus ojos azules guardan un pedacito de cielo.' },
+    { id: 'british', label: 'British Shorthair', preset: { fur: '#8e98a8', pattern: 'solid', patternColor: '#6c7686', eyes: '#e08a2e' },
+      story: 'Llegó a Britania con las legiones romanas. Su sonrisa redonda inspiró al Gato de Cheshire de Alicia en el País de las Maravillas.' },
+    { id: 'azulruso', label: 'Azul Ruso', preset: { fur: '#7f8fa6', pattern: 'solid', patternColor: '#64748b', eyes: '#57cc99' },
+      story: 'Viene del puerto de Arcángel, en el norte helado. Los marineros creían que su pelaje plateado traía buena suerte y alejaba los malos espíritus.' },
+    { id: 'angora', label: 'Angora Turco', preset: { fur: '#f7f3ee', pattern: 'solid', patternColor: '#f3dcb5', eyes: '#4cc9f0' },
+      story: 'Tesoro nacional de Turquía. Se dice que el gran fundador del país volverá a la Tierra en un Angora blanco de ojos de dos colores.' },
+    { id: 'bombay', label: 'Bombay', preset: { fur: '#2f2a36', pattern: 'solid', patternColor: '#4a4553', eyes: '#e08a2e' },
+      story: 'Una pantera en miniatura, negra como el azabache y con ojos de cobre. En muchas culturas, un gato negro cruzando tu camino es señal de fortuna.' }
   ];
   var BREED_IDS = OPTIONS.breeds.map(function (b) { return b.id; });
 
@@ -187,6 +204,9 @@
     } else if (pattern === 'calico') {
       fur = pick(['#f7f3ee', '#f3dcb5', '#f7f3ee']);
       patternColor = pick(['#4a4553', '#5e4034', '#8e98a8']);
+    } else if (pattern === 'tortie') {
+      fur = pick(['#2f2a36', '#4a4553', '#5e4034', '#8e98a8']);
+      patternColor = pick(['#d9773a', '#e07a3f', '#f3dcb5', '#e9b464']);
     } else if (pattern === 'tabby') {
       patternColor = hex(mix(rgb(fur), INK, 0.35));
     } else {
@@ -508,6 +528,20 @@
       if (reg === 'tail') return x < 0.4 ? 'orange' : (x > 0.62 ? 'pat' : null);
       return null;
     },
+    // carey: moteado de dos colores (fur + patternColor) sin blanco, con la clásica "cara partida"
+    tortie: function (reg, x, y, c) {
+      var gx = reg === 'tail' ? Math.floor(x * 9) : Math.floor(x / 2);
+      var gy = Math.floor(y / 2);
+      var seed = 0;
+      for (var i = 0; i < reg.length; i++) seed = (seed * 31 + reg.charCodeAt(i)) | 0;
+      var h = Math.sin(gx * 127.1 + gy * 311.7 + seed * 0.37) * 43758.5453;
+      h -= Math.floor(h);
+      if (reg === 'head' && x < 9.5 && y >= 3 && y <= 9) return h < 0.75 ? 'pat' : 'mix';
+      if (reg === 'earL') return 'pat';
+      if (h < 0.3) return 'pat';
+      if (h < 0.42) return 'mix';
+      return null;
+    },
     siamese: function (reg, x, y, c) {
       if (reg === 'earL' || reg === 'earR') return 'pat';
       if (reg === 'pawL' || reg === 'pawR' || reg === 'footL' || reg === 'footR') return 'pat';
@@ -647,6 +681,7 @@
 
   var BREED_SHAPES = {
     comun: {},
+    carey: {},
     naranja: {},
     siames: { ears: 'tall', tail: 'thin' },
     persa: { ears: 'small', head: 'fluffy', face: 'flat', tail: 'fluffy', fluff: true, ruff: true },

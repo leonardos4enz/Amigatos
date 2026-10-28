@@ -20,9 +20,9 @@ en tiempo real (Gato / tic-tac-toe y Ahorcado). Todo el texto de la UI en **espa
 ```json
 {
   "name": "Michi",
-  "breed": "comun",         // "comun"|"siames"|"persa"|"mainecoon"|"sphynx"|"scottish"|"bengala"|"ragdoll"|"british"|"azulruso"|"angora"|"bombay"|"naranja" (desconocida → "comun")
+  "breed": "comun",         // "comun"|"carey"|"siames"|"persa"|"mainecoon"|"sphynx"|"scottish"|"bengala"|"ragdoll"|"british"|"azulruso"|"angora"|"bombay"|"naranja" (desconocida → "comun")
   "fur": "#f4a261",         // color base
-  "pattern": "tabby",       // "solid" | "tabby" | "spots" | "tuxedo" | "calico" | "siamese"
+  "pattern": "tabby",       // "solid" | "tabby" | "spots" | "tuxedo" | "calico" | "siamese" | "tortie"
   "patternColor": "#8d5524",
   "eyes": "#2a9d8f",
   "accessory": "bow",       // "none" | "bow" | "hat" | "scarf" | "crown" | "glasses" | "flower"

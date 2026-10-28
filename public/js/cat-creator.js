@@ -60,6 +60,9 @@
     '.cc-dice:hover{transform:translateY(-2px) rotate(-6deg);}.cc-dice:active{transform:translateY(2px);}',
     '.cc-dice:focus-visible{outline:3px dashed var(--cc-accent);outline-offset:5px;}',
     '.cc-name-big{font-size:22px;}',
+    '.cc-story{margin:12px 3px 0;padding:10px 12px;background:#fff8e7;color:var(--cc-ink);}',
+    '.cc-story-title{font-size:15px;font-weight:700;margin-bottom:4px;color:var(--cc-accent);}',
+    '.cc-story-text{margin:0;font-size:15px;line-height:1.35;}',
     '@media (max-width:480px){.cc-root{gap:14px;}.cc-panel{padding:12px;}.cc-sw{width:28px;height:28px;}.cc-swatches{gap:9px;}',
     '.cc-opts{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}.cc-opt img{width:48px;height:48px;}.cc-stagewrap{flex-basis:100%;}.cc-stage{max-width:240px;}}',
     '@media (prefers-reduced-motion:reduce){.cc-sw,.cc-opt,.cc-random{transition:none;}}'
@@ -147,6 +150,12 @@
       return { btn: btn, id: b.id };
     });
     secBreed.appendChild(breedGrid);
+    var story = el('div', 'cc-story cc-px', { 'aria-live': 'polite' });
+    var storyTitle = el('div', 'cc-story-title');
+    var storyText = el('p', 'cc-story-text');
+    story.appendChild(storyTitle);
+    story.appendChild(storyText);
+    secBreed.appendChild(story);
 
     // filas de color
     var swatchRows = {};
@@ -230,6 +239,10 @@
         if (/^#[0-9a-f]{6}$/.test(v) && document.activeElement !== r.input) r.input.value = v;
       });
       breedItems.forEach(function (it) { it.btn.setAttribute('aria-pressed', it.id === cat.breed ? 'true' : 'false'); });
+      var info = (O.breeds || []).filter(function (b) { return b.id === cat.breed; })[0];
+      storyTitle.textContent = info ? '📜 La historia del ' + info.label : '';
+      storyText.textContent = info && info.story ? info.story : '';
+      story.style.display = info && info.story ? '' : 'none';
       patternItems.forEach(function (it) { it.btn.setAttribute('aria-pressed', it.id === cat.pattern ? 'true' : 'false'); });
       accItems.forEach(function (it) { it.btn.setAttribute('aria-pressed', it.id === cat.accessory ? 'true' : 'false'); });
       if (thumbs) {

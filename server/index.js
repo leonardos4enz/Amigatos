@@ -20,9 +20,9 @@ if (!JWT_SECRET) {
 }
 
 // ---------- Utilidades ----------
-const PATTERNS = ['solid', 'tabby', 'spots', 'tuxedo', 'calico', 'siamese'];
+const PATTERNS = ['solid', 'tabby', 'spots', 'tuxedo', 'calico', 'siamese', 'tortie'];
 const ACCESSORIES = ['none', 'bow', 'hat', 'scarf', 'crown', 'glasses', 'flower'];
-const BREEDS = ['comun', 'siames', 'persa', 'mainecoon', 'sphynx', 'scottish', 'bengala', 'ragdoll', 'british', 'azulruso', 'angora', 'bombay', 'naranja'];
+const BREEDS = ['comun', 'carey', 'siames', 'persa', 'mainecoon', 'sphynx', 'scottish', 'bengala', 'ragdoll', 'british', 'azulruso', 'angora', 'bombay', 'naranja'];
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
 function validateCat(input) {

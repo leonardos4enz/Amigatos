@@ -404,6 +404,13 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 }
 .me-catname { font-family: var(--font-pixel); font-size: 16px; margin: 14px 0 6px; word-break: break-word; }
 .me-username { margin: 0 0 14px; color: var(--ink-2); }
+.me-story {
+  margin: 0 0 14px; padding: 10px 12px; text-align: left; background: var(--cream-2);
+  box-shadow: 0 -3px 0 0 var(--ink), 0 3px 0 0 var(--ink), -3px 0 0 0 var(--ink), 3px 0 0 0 var(--ink);
+}
+.me-story[hidden] { display: none; }
+.me-story-title { margin: 0 0 4px; font-weight: 700; color: var(--pink-d); }
+.me-story-text { margin: 0; font-size: 15px; line-height: 1.35; }
 
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .stat {
