@@ -105,6 +105,61 @@
         'oo.....oo'
       ],
       colors: { o: C.ink, g: C.gold, w: C.white }
+    },
+    // iconos de las tarjetas de los juegos enchufables (la clave es el id del juego)
+    connect4: {
+      rows: [
+        'ooooooooooooooo',
+        'olllllllllllllo',
+        'olcclcclcclcclo',
+        'olcclcclcclcclo',
+        'olllllllllllllo',
+        'olcclwplbblcclo',
+        'olcclpplbblcclo',
+        'olllllllllllllo',
+        'olwplbblwbbwplo',
+        'olpplbblbblpplo',
+        'olllllllllllllo',
+        'ooooooooooooooo',
+        '.oLo.......oLo.'
+      ],
+      colors: { o: C.ink, l: C.lilac, L: C.lilacD, c: C.cream, p: C.pink, b: '#8ecae6', w: C.white }
+    },
+    memory: {
+      rows: [
+        'ooooooo........',
+        'opppppo........',
+        'opdpdpo.ooooooo',
+        'opppppo.occccco',
+        'opdpdpo.oacccao',
+        'opppppo.oaaaaao',
+        'opdpdpo.okaaako',
+        'opppppo.oaaraao',
+        'opdpdpo.ocaaaco',
+        'opppppo.occccco',
+        'ooooooo.ogcgcgo',
+        '........occccco',
+        '........ooooooo'
+      ],
+      colors: { o: C.ink, p: C.pink, d: C.pinkD, c: C.cream, a: C.peach, k: C.ink, r: C.red, g: C.gold }
+    },
+    boxes: {
+      rows: [
+        '..o.......o..',
+        '.oao.....oao.',
+        '.oaaoooooaao.',
+        '.oaaaaaaaaao.',
+        '.oakwaaakwao.',
+        '.oaaaarraaao.',
+        'ooooooooooooo',
+        'owwwwwcwwwwwo',
+        'owwwwwcwwwwwo',
+        'owwwwwwwwwwwo',
+        'owwdwwwwwdwwo',
+        'odddddddddddo',
+        'ooooooooooooo'
+      ],
+      colors: { o: C.ink, a: C.peach, k: C.ink, w: C.woodL, d: C.wood, c: C.cream, r: C.pink }
     }
   };
 

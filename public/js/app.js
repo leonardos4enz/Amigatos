@@ -296,7 +296,8 @@
       var ic = document.createElement('div');
       ic.className = 'game-card-icon';
       ic.setAttribute('aria-hidden', 'true');
-      ic.textContent = g.emoji || '🎲';
+      var pix = window.GamesUI && GamesUI.icon ? GamesUI.icon(g.id) : '';
+      if (pix) ic.innerHTML = pix; else ic.textContent = g.emoji || '🎲';
       var txt = document.createElement('div');
       var h = document.createElement('h3'); h.textContent = g.name;
       var p = document.createElement('p'); p.textContent = g.description || '';
