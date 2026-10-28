@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Amigatos · Laboratorio de gatos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#fdf1f4;color:#3b2a40;font-family:"Pixelify Sans","Press Start 2P",monospace;}
+  header{padding:18px 16px 4px;text-align:center}
+  h1{font-family:"Press Start 2P",monospace;font-size:18px;margin:0 0 6px;line-height:1.5}
+  h2{font-size:20px;margin:28px 16px 10px}
+  .bar{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:8px 16px}
+  button.lab{font:inherit;font-size:16px;background:#fff;border:3px solid #3b2a40;padding:6px 12px;cursor:pointer}
+  .table{overflow-x:auto;padding:0 16px}
+  table{border-collapse:separate;border-spacing:6px}
+  th{font-weight:400;font-size:14px;text-align:center}
+  td{background:#fff;text-align:center;padding:4px}
+  td canvas{display:block}
+  .name{font-size:13px;max-width:140px}
+  .row{display:flex;flex-wrap:wrap;gap:14px;padding:0 16px;align-items:center}
+  .row figure{margin:0;background:#fff;padding:8px;text-align:center;font-size:13px}
+  .row img{image-rendering:pixelated;display:block}
+  #creator{padding:0 16px 40px}
+  #out{font-size:12px;white-space:pre-wrap;padding:0 16px;color:#6b5470}
+  .dark{background:#2b2236;color:#fff}
+  .dark td,.dark figure{background:#3a2f48}
+</style>
+</head>
+<body>
+<header>
+  <h1>🐾 Laboratorio de gatos</h1>
+  <div>Prueba de <code>cat-art.js</code> y <code>cat-creator.js</code></div>
+</header>
+<div class="bar">
+  <button class="lab" id="reroll">🎲 Otros gatos</button>
+  <button class="lab" id="flip">↔ Voltear</button>
+  <button class="lab" id="theme">🌙 Fondo oscuro</button>
+</div>
+
+<h2>Animaciones (escala 4)</h2>
+<div class="table"><table id="grid"></table></div>
+
+<h2>Grande (escala 8)</h2>
+<div class="row" id="big"></div>
+
+<h2>Razas (escala 4, clic = feliz)</h2>
+<div class="row" id="breeds"></div>
+
+<h2>Patrones × accesorios (toDataURL)</h2>
+<div class="row" id="sheet"></div>
+
+<h2>Decoración</h2>
+<div class="row" id="decor"></div>
+
+<h2>Creador</h2>
+<div id="creator"></div>
+<div id="out"></div>
+
+<script src="js/cat-art.js"></script>
+<script src="js/cat-creator.js"></script>
+<script>
+(function(){
+  var A = window.CatArt;
+  var ANIMS = ['idle','happy','sad','sleep','walk'];
+  var ctrls = [];
+  var flip = false;
+
+  function build(){
+    ctrls.forEach(function(c){ c.destroy(); });
+    ctrls = [];
+    var grid = document.getElementById('grid');
+    grid.innerHTML = '<tr><th></th>' + ANIMS.map(function(a){ return '<th>'+a+'</th>'; }).join('') + '</tr>';
+    var cats = [A.defaultCat()];
+    for (var i = 0; i < 7; i++) cats.push(A.randomCat());
+    cats.forEach(function(cat){
+      var tr = document.createElement('tr');
+      var th = document.createElement('td');
+      th.className = 'name';
+      th.textContent = cat.name + ' · ' + cat.pattern + ' · ' + cat.accessory;
+      tr.appendChild(th);
+      ANIMS.forEach(function(a){
+        var td = document.createElement('td');
+        var cv = document.createElement('canvas');
+        td.appendChild(cv);
+        tr.appendChild(td);
+        var c = A.mount(cv, cat, {scale:4, anim:a, flip:flip});
+        ctrls.push(c);
+        if (a === 'happy' || a === 'sad') {
+          var t = setInterval(function(){ if (!cv.isConnected) return clearInterval(t); c.play(a); }, 2200);
+        }
+      });
+      grid.appendChild(tr);
+    });
+    var big = document.getElementById('big');
+    big.innerHTML = '';
+    cats.slice(0,4).forEach(function(cat){
+      var f = document.createElement('figure');
+      var cv = document.createElement('canvas');
+      f.appendChild(cv);
+      var cap = document.createElement('figcaption');
+      cap.textContent = cat.name + ' (clic = feliz)';
+      f.appendChild(cap);
+      big.appendChild(f);
+      var c = A.mount(cv, cat, {scale:8, anim:'idle', flip:flip});
+      ctrls.push(c);
+      cv.onclick = function(){ c.play('happy'); };
+    });
+  }
+  build();
+
+  // todas las razas, cada una con su animación rotando
+  var breedsEl = document.getElementById('breeds');
+  A.OPTIONS.breeds.forEach(function(b, i){
+    var cat = Object.assign({name:b.label, breed:b.id, accessory:'none', accessoryColor:'#ff8fab'}, b.preset);
+    var f = document.createElement('figure');
+    var cv = document.createElement('canvas');
+    f.appendChild(cv);
+    var cap = document.createElement('div');
+    cap.textContent = b.label;
+    f.appendChild(cap);
+    breedsEl.appendChild(f);
+    var c = A.mount(cv, cat, {scale:4, anim: ANIMS[i % ANIMS.length]});
+    cv.onclick = function(){ c.play('happy'); };
+  });
+
+  // hoja de patrones × accesorios
+  var sheet = document.getElementById('sheet');
+  var base = A.defaultCat();
+  var demo = {
+    solid:{fur:'#8e98a8'}, tabby:{fur:'#f4a261', patternColor:'#b5602f'}, spots:{fur:'#f7f3ee', patternColor:'#4a4553'},
+    tuxedo:{fur:'#4a4553', patternColor:'#f7f3ee'}, calico:{fur:'#f7f3ee', patternColor:'#4a4553'}, siamese:{fur:'#f3dcb5', patternColor:'#5e4034'}
+  };
+  A.OPTIONS.patterns.forEach(function(p, i){
+    var acc = A.OPTIONS.accessories[(i+1) % A.OPTIONS.accessories.length].id;
+    var cat = Object.assign({}, base, demo[p.id], {pattern:p.id, accessory:acc, accessoryColor:A.OPTIONS.accentPalette[i]});
+    var f = document.createElement('figure');
+    f.innerHTML = '<img width="128" height="128" src="'+A.toDataURL(cat,4)+'"><div>'+p.label+' + '+acc+'</div>';
+    sheet.appendChild(f);
+  });
+  A.OPTIONS.accessories.forEach(function(a){
+    var cat = Object.assign({}, base, {accessory:a.id});
+    var f = document.createElement('figure');
+    f.innerHTML = '<img width="96" height="96" src="'+A.toDataURL(cat,3)+'"><div>'+a.label+'</div>';
+    sheet.appendChild(f);
+  });
+  // gato inválido → valores por defecto
+  var bad = document.createElement('figure');
+  bad.innerHTML = '<img width="96" height="96" src="'+A.toDataURL({fur:'rojo', pattern:'xx', eyes:42},3)+'"><div>datos inválidos</div>';
+  sheet.appendChild(bad);
+
+  var decor = document.getElementById('decor');
+  ['drawYarn','drawFish','drawHeart','drawPaw','drawStar','drawFishbone'].forEach(function(fn){
+    var f = document.createElement('figure');
+    var cv = document.createElement('canvas');
+    A[fn](cv, 4);
+    f.appendChild(cv);
+    f.appendChild(document.createTextNode(fn));
+    decor.appendChild(f);
+  });
+
+  var out = document.getElementById('out');
+  var cc = CatCreator.mount(document.getElementById('creator'), A.defaultCat(), function(cat){
+    out.textContent = 'onChange → ' + JSON.stringify(cat);
+  });
+  window._creator = cc;
+
+  document.getElementById('reroll').onclick = build;
+  document.getElementById('flip').onclick = function(){ flip = !flip; build(); };
+  document.getElementById('theme').onclick = function(){ document.body.classList.toggle('dark'); };
+})();
+</script>
+</body>
+</html>

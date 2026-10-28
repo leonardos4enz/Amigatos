@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffe9f0">
+  <title>Amigatos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Barra superior -->
+  <header class="topbar">
+    <div class="brand" aria-label="Amigatos">
+      <span class="brand-icon" id="brand-icon" aria-hidden="true"></span>
+      <h1 class="brand-title" id="brand-title">Amigatos</h1>
+    </div>
+    <div class="topbar-right">
+      <div class="user-chip hidden" id="user-chip">
+        <span class="user-chip-avatar" id="user-chip-avatar"></span>
+        <span class="user-chip-name" id="user-chip-name"></span>
+      </div>
+      <button class="icon-btn" id="btn-mute" type="button" title="Sonido" aria-label="Activar o silenciar sonido">🔊</button>
+    </div>
+  </header>
+
+  <div class="conn-banner hidden" id="conn-banner" role="status">Reconectando… 🐾</div>
+
+  <main class="app" id="app">
+
+    <!-- 1. Auth -->
+    <section class="screen hidden" data-screen="auth" id="screen-auth">
+      <div class="auth-wrap">
+        <div class="auth-hero">
+          <div class="hero-cats" aria-hidden="true">
+            <canvas id="hero-cat-a" class="pixel-canvas"></canvas>
+            <span class="hero-heart">♥</span>
+            <canvas id="hero-cat-b" class="pixel-canvas"></canvas>
+          </div>
+          <p class="hero-text">Diseña tu gatito, invita a tu amigo y jueguen juntos aunque estén lejos.</p>
+        </div>
+
+        <div class="panel auth-panel">
+          <div class="tabs" role="tablist">
+            <button class="tab active" type="button" role="tab" data-tab="login" aria-selected="true">Entrar</button>
+            <button class="tab" type="button" role="tab" data-tab="register" aria-selected="false">Crear cuenta</button>
+          </div>
+          <form id="auth-form" class="auth-form" novalidate autocomplete="on">
+            <label class="field">
+              <span class="field-label">Usuario</span>
+              <input class="input" id="auth-username" name="username" type="text" maxlength="20"
+                     autocomplete="username" autocapitalize="off" spellcheck="false" required placeholder="michifan_99">
+            </label>
+            <label class="field">
+              <span class="field-label">Contraseña</span>
+              <input class="input" id="auth-password" name="password" type="password"
+                     autocomplete="current-password" required placeholder="••••">
+            </label>
+            <p class="hint" id="auth-hint">¡Hola de nuevo! Entra para ver a tus amigatos.</p>
+            <div class="form-error hidden" id="auth-error" role="alert"></div>
+            <button class="btn btn-pink btn-block" id="auth-submit" type="submit">Entrar</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Creador de gato -->
+    <section class="screen hidden" data-screen="creator" id="screen-creator">
+      <div class="panel creator-panel">
+        <h2 class="panel-title" id="creator-title">¡Diseña tu gato!</h2>
+        <p class="hint center" id="creator-sub">Elige colores, patrón y accesorio. ¡Ponle un nombre bonito!</p>
+        <div class="creator-host" id="creator-host"></div>
+        <div class="form-error hidden" id="creator-error" role="alert"></div>
+        <div class="row-buttons">
+          <button class="btn btn-ghost hidden" id="creator-cancel" type="button">Cancelar</button>
+          <button class="btn btn-mint" id="creator-save" type="button">Guardar gato</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Sala -->
+    <section class="screen hidden" data-screen="lobby" id="screen-lobby">
+      <div class="lobby-grid">
+        <div class="panel me-panel">
+          <div class="me-stage">
+            <div class="me-cat-wrap" id="me-cat-wrap" title="¡Hazle cariño!">
+              <canvas id="me-cat" class="pixel-canvas"></canvas>
+            </div>
+            <div class="me-shadow" aria-hidden="true"></div>
+          </div>
+          <h2 class="me-catname" id="me-catname">Michi</h2>
+          <p class="me-username" id="me-username">@usuario</p>
+          <div class="stats">
+            <div class="stat stat-win"><span class="stat-num" id="stat-wins">0</span><span class="stat-label">Victorias</span></div>
+            <div class="stat stat-loss"><span class="stat-num" id="stat-losses">0</span><span class="stat-label">Derrotas</span></div>
+            <div class="stat stat-draw"><span class="stat-num" id="stat-draws">0</span><span class="stat-label">Empates</span></div>
+          </div>
+          <div class="row-buttons">
+            <button class="btn btn-lilac btn-sm" id="btn-edit-cat" type="button">Editar mi gato</button>
+            <button class="btn btn-ghost btn-sm" id="btn-logout" type="button">Salir</button>
+          </div>
+        </div>
+
+        <div class="panel online-panel">
+          <h2 class="panel-title"><span class="dot-online" aria-hidden="true"></span> Amigatos en línea</h2>
+          <ul class="player-list" id="player-list"></ul>
+          <div class="empty hidden" id="player-empty">
+            <div class="empty-icon" aria-hidden="true">💤</div>
+            <p>Solo tú por aquí… ¡Comparte el enlace con tu amigo para jugar juntos!</p>
+          </div>
+        </div>
+
+        <div class="panel games-panel">
+          <h2 class="panel-title">Minijuegos</h2>
+          <div class="game-cards">
+            <article class="game-card card-ttt">
+              <div class="game-card-icon" id="icon-ttt" aria-hidden="true"></div>
+              <div>
+                <h3>Gato</h3>
+                <p>El clásico tres en línea. Tú pones huellitas 🐾 o pescaditos 🐟; ¡el primero en alinear tres gana!</p>
+              </div>
+            </article>
+            <article class="game-card card-hm">
+              <div class="game-card-icon" id="icon-hm" aria-hidden="true"></div>
+              <div>
+                <h3>Ahorcado</h3>
+                <p>Adivinen la palabra por turnos. Cada letra acertada suma puntos y repites turno. ¡Cuidado, que el ovillo se deshace!</p>
+              </div>
+            </article>
+          </div>
+          <p class="hint center">Elige a alguien de la lista para invitarle a jugar.</p>
+        </div>
+
+        <div class="panel board-panel">
+          <div class="panel-title-row">
+            <h2 class="panel-title">🏆 Ranking</h2>
+            <button class="icon-btn icon-btn-sm" id="btn-lb-refresh" type="button" title="Actualizar" aria-label="Actualizar ranking">↻</button>
+          </div>
+          <ol class="leaderboard" id="leaderboard"></ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Partida -->
+    <section class="screen hidden" data-screen="game" id="screen-game">
+      <div class="vs-bar panel">
+        <div class="fighter" id="fighter-left">
+          <div class="fighter-cat"><canvas class="pixel-canvas"></canvas></div>
+          <div class="fighter-info">
+            <span class="fighter-name"></span>
+            <span class="fighter-score"></span>
+          </div>
+        </div>
+        <div class="vs-mid">
+          <div class="game-label" id="game-label">Gato</div>
+          <div class="vs-text" aria-hidden="true">VS</div>
+          <div class="turn-pill" id="turn-pill">…</div>
+        </div>
+        <div class="fighter fighter-right" id="fighter-right">
+          <div class="fighter-cat"><canvas class="pixel-canvas"></canvas></div>
+          <div class="fighter-info">
+            <span class="fighter-name"></span>
+            <span class="fighter-score"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="game-layout">
+        <div class="panel game-board" id="game-board"></div>
+
+        <aside class="panel chat-panel">
+          <h2 class="panel-title small">Chat</h2>
+          <ul class="chat-log" id="chat-log" aria-live="polite"></ul>
+          <div class="emotes">
+            <button class="emote" type="button" data-emote="Miau!">Miau!</button>
+            <button class="emote" type="button" data-emote="😺">😺</button>
+            <button class="emote" type="button" data-emote="❤️">❤️</button>
+            <button class="emote" type="button" data-emote="jaja">jaja</button>
+          </div>
+          <form class="chat-form" id="chat-form" autocomplete="off">
+            <input class="input" id="chat-input" type="text" maxlength="200" placeholder="Escribe algo lindo…" aria-label="Mensaje">
+            <button class="btn btn-pink btn-sm" type="submit">Enviar</button>
+          </form>
+        </aside>
+      </div>
+
+      <div class="row-buttons game-actions">
+        <button class="btn btn-ghost btn-sm" id="btn-leave-game" type="button">Volver a la sala</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- 4. Invitación recibida -->
+  <div class="modal-backdrop hidden" id="invite-modal" role="dialog" aria-modal="true" aria-labelledby="invite-title">
+    <div class="modal panel pop-in">
+      <div class="modal-cat"><canvas id="invite-cat" class="pixel-canvas"></canvas></div>
+      <h2 class="modal-title" id="invite-title">¡Invitación!</h2>
+      <p class="modal-text" id="invite-text"></p>
+      <div class="row-buttons">
+        <button class="btn btn-ghost" id="invite-decline" type="button">Rechazar</button>
+        <button class="btn btn-mint" id="invite-accept" type="button">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fin de partida -->
+  <div class="modal-backdrop hidden" id="over-modal" role="dialog" aria-modal="true" aria-labelledby="over-title">
+    <div class="modal panel pop-in over-modal">
+      <div class="confetti" id="over-confetti" aria-hidden="true"></div>
+      <div class="modal-cat"><canvas id="over-cat" class="pixel-canvas"></canvas></div>
+      <h2 class="modal-title over-title" id="over-title">¡Ganaste!</h2>
+      <p class="modal-text" id="over-sub"></p>
+      <p class="word-reveal hidden" id="over-word"></p>
+      <p class="rematch-note hidden" id="over-rematch-note"></p>
+      <div class="row-buttons">
+        <button class="btn btn-ghost" id="over-lobby" type="button">Volver a la sala</button>
+        <button class="btn btn-pink" id="over-rematch" type="button">Revancha</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmación -->
+  <div class="modal-backdrop hidden" id="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-text">
+    <div class="modal panel pop-in modal-sm">
+      <p class="modal-text" id="confirm-text"></p>
+      <div class="row-buttons">
+        <button class="btn btn-ghost" id="confirm-no" type="button">Cancelar</button>
+        <button class="btn btn-peach" id="confirm-yes" type="button">Sí</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/cat-art.js"></script>
+  <script src="js/cat-creator.js"></script>
+  <script src="js/games-ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
