@@ -47,7 +47,8 @@
     friendsLoaded: false,
     searchQuery: '',
     searchResults: null,
-    searchSeq: 0
+    searchSeq: 0,
+    worldRoom: null
   };
 
   /* ---------- Sonidos (WebAudio, sin archivos) ---------- */
@@ -239,6 +240,7 @@
     if (S.screen === 'lobby') { destroyCtl(S.meCat); S.meCat = null; }
     if (S.screen === 'auth') { S.heroCats.forEach(destroyCtl); S.heroCats = []; }
     if (S.screen === 'game') { destroyCtl(S.fighters.left); destroyCtl(S.fighters.right); S.fighters = { left: null, right: null }; }
+    if (S.screen === 'world') { leaveWorldRoom(); unmountWorld(); }
 
     S.screen = name;
     $$('.screen').forEach(function (sec) { sec.classList.toggle('hidden', sec.dataset.screen !== name); });
@@ -1414,6 +1416,73 @@
     S.socket.emit('chat:send', { gameId: S.game.id, text: text });
   }
 
+  /* ---------- El mundo ---------- */
+  // El motor (public/js/world.js) solo dibuja lo que le manda el servidor.
+  function worldUI() { return window.WorldUI || null; }
+
+  function unmountWorld() {
+    var ui = worldUI();
+    if (ui) { try { ui.unmount(); } catch (e) { /* noop */ } }
+    S.worldRoom = null;
+  }
+
+  // Avisa al servidor de que el gato sale de la sala del mundo.
+  function leaveWorldRoom() {
+    if (S.socket && S.socket.connected) S.socket.emit('world:leave');
+  }
+
+  // Entra al mundo: monta el motor y le pide al servidor la sala (por defecto, la plaza).
+  function enterWorld() {
+    if (!S.socket || !S.socket.connected) return toast('Sin conexión. Espera un momento…', 'error');
+    showScreen('world');
+    var ui = worldUI();
+    if (ui) {
+      try {
+        ui.setMoveHandler(sendWorldMove);
+        ui.mount($('#world-stage'));
+      } catch (e) { console.error(e); }
+    }
+    S.socket.emit('world:enter', {});
+  }
+
+  // Clic en el piso: el servidor decide si el gato se mueve o cambia de sala.
+  function sendWorldMove(x, y) {
+    if (!S.socket || !S.socket.connected) return;
+    S.socket.emit('world:move', { x: x, y: y });
+  }
+
+  function onWorldState(d) {
+    if (!d) return;
+    var ui = worldUI();
+    if (ui) { try { ui.applyState(d); } catch (e) { console.error(e); } }
+    if (d.room) {
+      S.worldRoom = d.room.id || null;
+      $('#world-room-name').textContent = d.room.name || '';
+      renderWorldExits(d.room.exits || []);
+    }
+  }
+
+  function renderWorldExits(exits) {
+    var ul = $('#world-exits');
+    if (!ul) return;
+    ul.innerHTML = '';
+    exits.forEach(function (e) {
+      var li = document.createElement('li');
+      li.className = 'world-exit';
+      li.textContent = (e && e.label) || (e && e.to) || '';
+      ul.appendChild(li);
+    });
+  }
+
+  // Vuelve al lobby: avisa al servidor, desmonta el mundo y repinta la sala.
+  function leaveWorld() {
+    leaveWorldRoom();
+    unmountWorld();
+    showScreen('lobby');
+    renderMe();
+    renderPresence();
+  }
+
   /* ---------- Socket ---------- */
   function connectSocket() {
     if (S.socket) { try { S.socket.removeAllListeners(); S.socket.disconnect(); } catch (e) { /* noop */ } }
@@ -1443,6 +1512,8 @@
         }
       }
       S.wasDisconnected = false;
+      // si estábamos en el mundo, reentramos en la sala en la que estábamos
+      if (S.screen === 'world') sock.emit('world:enter', { room: S.worldRoom || 'plaza' });
     });
     sock.on('disconnect', function (reason) {
       if (reason === 'io client disconnect') return;
@@ -1477,6 +1548,10 @@
     sock.on('game:over', onGameOver);
     sock.on('game:rematch', onRematch);
     sock.on('chat:msg', onChatMsg);
+    sock.on('world:state', onWorldState);
+    sock.on('world:join', function (d) { var ui = worldUI(); if (ui) ui.applyJoin(d); });
+    sock.on('world:left', function (d) { var ui = worldUI(); if (ui) ui.applyLeft(d); });
+    sock.on('world:moved', function (d) { var ui = worldUI(); if (ui) ui.applyMoved(d); });
     sock.on('error:msg', function (d) {
       toast((d && d.message) || 'Algo salió mal', 'error');
       if (S.overShownFor && S.rematchMine) {
@@ -1503,6 +1578,8 @@
     $('#creator-cancel').addEventListener('click', function () { if (S.user && S.user.cat) enterLobby(); });
 
     $('#btn-edit-cat').addEventListener('click', function () { openCreator(false); });
+    $('#btn-explorar').addEventListener('click', enterWorld);
+    $('#btn-world-back').addEventListener('click', leaveWorld);
     $('#btn-logout').addEventListener('click', function () {
       confirmPixel('¿Cerrar sesión?', 'Salir', 'Quedarme').then(function (ok) { if (ok) logout('¡Hasta pronto! 👋'); });
     });
