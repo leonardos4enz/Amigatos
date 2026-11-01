@@ -1462,16 +1462,32 @@
     }
   }
 
+  // Las salidas de la sala: cada una es un botón con el nombre de la sala de destino.
+  // Al pulsarlo el gato camina hasta esa salida (es un movimiento normal, lo
+  // valida el servidor igual que un clic en el piso).
   function renderWorldExits(exits) {
-    var ul = $('#world-exits');
-    if (!ul) return;
-    ul.innerHTML = '';
+    var list = $('#world-exits');
+    if (!list) return;
+    list.innerHTML = '';
     exits.forEach(function (e) {
-      var li = document.createElement('li');
-      li.className = 'world-exit';
-      li.textContent = (e && e.label) || (e && e.to) || '';
-      ul.appendChild(li);
+      if (!e || !e.to) return;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'world-exit';
+      btn.textContent = e.label || e.to;
+      btn.setAttribute('data-exit-to', e.to);
+      btn.addEventListener('click', function () { walkToExit(e); });
+      list.appendChild(btn);
     });
+  }
+
+  // Camina hasta el centro de la salida: el servidor comprueba que el punto
+  // está en la sala y, si cae dentro de la salida, decide el cambio de sala.
+  function walkToExit(exit) {
+    if (!exit || !S.socket || !S.socket.connected) return;
+    var x = Math.round(Number(exit.x) + (Number(exit.w) || 0) / 2);
+    var y = Math.round(Number(exit.y) + (Number(exit.h) || 0) / 2);
+    sendWorldMove(x, y);
   }
 
   // Vuelve al lobby: avisa al servidor, desmonta el mundo y repinta la sala.

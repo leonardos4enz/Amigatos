@@ -572,14 +572,23 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 }
 .world-exit {
   padding: 6px 12px;
+  border: 0;
   background: var(--cream-2);
+  font-family: inherit;
   font-size: 15px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
   box-shadow:
     0 -2px 0 0 var(--ink),
     0 2px 0 0 var(--ink),
     -2px 0 0 0 var(--ink),
     2px 0 0 0 var(--ink);
 }
+.world-exit:hover { filter: brightness(1.04) saturate(1.08); }
+.world-exit:active { transform: translateY(2px); }
+.world-exit:focus-visible { outline: 3px dashed var(--lilac-d); outline-offset: 3px; }
 
 /* ---------- Partida ---------- */
 .vs-bar {
