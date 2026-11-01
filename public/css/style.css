@@ -519,6 +519,68 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 /* ---------- Avatares fallback ---------- */
 .avatar-fallback { font-size: 28px; line-height: 1; }
 
+/* ---------- El mundo ---------- */
+.world-wrap {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+/* el piso: 96×72 lógicos (4:3). El fondo pixel art y los gatos van encima. */
+.world-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: var(--sky);
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+/* sin padding: el fondo ocupa todo el piso y las coordenadas del clic cuadran */
+.world-stage.panel { padding: 0; }
+.world-stage canvas { display: block; image-rendering: pixelated; }
+.world-layer { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.world-cat { position: absolute; }
+.world-cat-canvas { display: block; image-rendering: pixelated; }
+.world-cat-name {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  pointer-events: none;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: #fff;
+  text-shadow: 1px 1px 0 var(--ink);
+}
+
+#world-room-name { justify-content: center; margin-bottom: 0; }
+
+/* las salidas de la sala */
+.world-exits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.world-exit {
+  padding: 6px 12px;
+  background: var(--cream-2);
+  font-size: 15px;
+  box-shadow:
+    0 -2px 0 0 var(--ink),
+    0 2px 0 0 var(--ink),
+    -2px 0 0 0 var(--ink),
+    2px 0 0 0 var(--ink);
+}
+
 /* ---------- Partida ---------- */
 .vs-bar {
   display: grid;
