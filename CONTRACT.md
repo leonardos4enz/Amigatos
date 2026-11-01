@@ -176,6 +176,12 @@ el cliente solo dibuja lo que recibe. El catálogo de salas y las reglas de movi
 Coordenadas lógicas enteras: x 0..width, y 0..height (96×72, como los fondos de CatBG). El rectángulo
 de una salida cubre x..x+w-1, y..y+h-1. El room de Socket.IO de una sala es `world:<roomId>`.
 
+### Interfaz de las salidas
+- La lista de salidas de la sala (`#world-exits`) pinta cada salida como un `<button>` con el nombre de la
+  sala de destino (`label`). Al pulsarlo, con ratón o con teclado, el cliente emite `world:move` con el
+  centro de esa salida: el cambio de sala lo decide el servidor con la misma validación que un clic en el
+  piso (no hay atajo en el cliente).
+
 ### Cliente → servidor
 - `world:enter` `{ room? }` — entra al mundo; sin `room` entra a `plaza`. Si ya estaba en el mundo, sale
   primero de la sala anterior (los demás reciben `world:left`) y luego entra en la nueva.
