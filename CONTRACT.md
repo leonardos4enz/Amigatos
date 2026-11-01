@@ -141,6 +141,8 @@ Cada juego nuevo vive en **dos archivos propios** y no toca nada más:
   `draw` pinta en pixeles lógicos (≈96×72, pero el alto varía con el contenedor: dibujar adaptándose a `w`,`h`).
   Animadas a 8 fps; `t` en segundos.
 - Escenas en `public/js/bg/indoor.js` y `public/js/bg/outdoor.js`.
+- Escenas del mundo en `public/js/bg/world.js`: `plaza` (Plaza Bigotes), `parque` (Parque Ronroneo)
+  y `cafe` (Café del Ovillo). Son las tres salas del mapa 2D (ver "El mundo (fase 1)").
 
 ## Amigos (añadido v3)
 Amistad **mutua e inmediata** (sin solicitudes): al agregar se guardan ambas direcciones en
@@ -158,3 +160,66 @@ Socket: `friends:updated` (sin payload) a ambas personas al agregar/quitar. El e
 **no** se reenvía por amigos: el cliente cruza su lista de amigos con `presence`.
 UI: panel "Mis amigos 💕" arriba de la sala (buscador, lista con botones de juego del catálogo, "Quitar"),
 y botón "+ Agregar" en "Conectados ahora" para quien no es amiga/o.
+
+## El mundo (fase 1)
+El mundo es un mapa 2D con salas. El **servidor es autoritativo**: decide la posición de cada gato y
+el cliente solo dibuja lo que recibe. El catálogo de salas y las reglas de movimiento viven en
+`server/world.js` (fuente única de la geometría); el cliente copia ese mismo catálogo para dibujar.
+
+### Salas
+| id | nombre | bg | tamaño (ancho×alto) | spawn | salidas |
+|---|---|---|---|---|---|
+| `plaza` | Plaza Bigotes | `plaza` | 96×72 | (48, 60) | → `parque` en x 0–7, y 30–43 (llega en 84, 56) · → `cafe` en x 88–95, y 30–43 (llega en 12, 56) |
+| `parque` | Parque Ronroneo | `parque` | 96×72 | (48, 60) | → `plaza` en x 88–95, y 30–43 (llega en 12, 37) |
+| `cafe` | Café del Ovillo | `cafe` | 96×72 | (48, 58) | → `plaza` en x 0–7, y 30–43 (llega en 84, 37) |
+
+Coordenadas lógicas enteras: x 0..width, y 0..height (96×72, como los fondos de CatBG). El rectángulo
+de una salida cubre x..x+w-1, y..y+h-1. El room de Socket.IO de una sala es `world:<roomId>`.
+
+### Cliente → servidor
+- `world:enter` `{ room? }` — entra al mundo; sin `room` entra a `plaza`. Si ya estaba en el mundo, sale
+  primero de la sala anterior (los demás reciben `world:left`) y luego entra en la nueva.
+- `world:move` `{ x, y }` — pide mover el gato a un punto del piso (coordenadas lógicas enteras).
+- `world:leave` — sale del mundo (vuelve al lobby).
+
+### Servidor → cliente
+- `world:state` `{ room, players, me }` — snapshot de la sala.
+  - `room` = `{ id, name, bg, width, height, spawn: {x, y}, exits: [{x, y, w, h, to, toSpawn: {x, y}, label}] }`
+  - `players` = **todos** los gatos de la sala, incluido el propio: `{ id, username, cat, x, y }`
+  - `me` = el propio gato: `{ id, username, cat, x, y }`
+- `world:join` `{ player }` — alguien más entró a tu sala: `{ id, username, cat, x, y }`.
+- `world:left` `{ id }` — alguien salió de tu sala o se fue del mundo.
+- `world:moved` `{ id, x, y }` — alguien se movió en tu sala.
+
+### Reglas del servidor
+- El servidor decide la posición: si `x`/`y` no son finitos, error; si están fuera de la sala, error y el
+  gato **no** se mueve; si son válidos se redondean a enteros, se guardan y se emite `world:moved` a todo
+  el room `world:<room>` (incluido quien se movió).
+- Cambio de sala: si la posición nueva cae dentro de una salida, el gato pasa a la sala `to` en el
+  `toSpawn` de esa salida. Entonces los demás de la sala anterior reciben `world:left`, quien se movió
+  recibe `world:state` con la sala nueva y los demás de la sala nueva reciben `world:join`.
+- Frecuencia: máximo **12 movimientos por persona cada 1000 ms** (ventana deslizante). Al pasarse, el gato
+  no se mueve y se manda `error:msg` con `"Te mueves muy rápido."`.
+- Varias pestañas: todas entran y salen de la sala juntas y todas reciben el `world:state`.
+- `world:leave` y la desconexión (última pestaña cerrada) sacan al gato del mundo y los demás de la sala
+  reciben `world:left` `{id}`.
+
+### Errores (`error:msg` → `{ message }`)
+| Mensaje | Cuándo |
+|---|---|
+| `Esa sala no existe.` | `world:enter` con una sala desconocida |
+| `Movimiento inválido.` | `world:move` con `x` o `y` que no es un número finito |
+| `No puedes salir de la sala.` | `world:move` con una posición fuera de 0..width / 0..height |
+| `Te mueves muy rápido.` | más de 12 movimientos en 1000 ms |
+| `Primero entra al mundo.` | `world:move` sin estar en el mundo |
+
+### Estado para el cliente (`window.__amigatos`)
+```js
+window.__amigatos = {
+  room: { id, name, bg, width, height, spawn, exits }, // la sala actual
+  me: { id, username, cat, x, y },                      // mi gato
+  players: [{ id, username, cat, x, y }],               // todos los gatos de la sala
+};
+```
+Es la forma oficial de probar el mundo (nadie ve la pantalla): el cliente mantiene `window.__amigatos`
+actualizado con cada `world:state`, `world:join`, `world:left` y `world:moved`.

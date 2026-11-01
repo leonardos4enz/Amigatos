@@ -9,6 +9,8 @@ const jwt = require('jsonwebtoken');
 
 const fs = require('fs');
 const db = require('./db');
+// Catálogo y reglas puras del mundo: salas, límites de movimiento y anti-abuso.
+const worldRules = require('./world');
 
 // Cada archivo de server/games/ es un juego: exporta create(players) y applyMove(state, userId, move),
 // y opcionalmente revealData(state) para destapar la info oculta (state.secret) si alguien abandona.
@@ -225,6 +227,105 @@ const games = new Map();
 const room = (uid) => `user:${uid}`;
 const newId = () => crypto.randomBytes(6).toString('hex');
 
+// ---------- El mundo ----------
+// userId -> { userId, room, x, y }: dónde está cada gato en el mundo (el servidor decide).
+const world = new Map();
+// userId -> marcas de tiempo (ms) de los movimientos aceptados (ventana deslizante).
+const worldMoves = new Map();
+
+// Room de Socket.IO de una sala del mundo.
+const worldRoom = (roomId) => `world:${roomId}`;
+
+// La sala del catálogo tal como se la manda al cliente.
+function worldRoomView(roomData) {
+  return {
+    id: roomData.id,
+    name: roomData.name,
+    bg: roomData.bg,
+    width: roomData.width,
+    height: roomData.height,
+    spawn: { x: roomData.spawn.x, y: roomData.spawn.y },
+    exits: roomData.exits.map((e) => ({
+      x: e.x,
+      y: e.y,
+      w: e.w,
+      h: e.h,
+      to: e.to,
+      toSpawn: { x: e.toSpawn.x, y: e.toSpawn.y },
+      label: e.label,
+    })),
+  };
+}
+
+// Un gato del mundo tal como se lo manda al cliente.
+function worldPlayer(uid) {
+  const state = world.get(uid);
+  const entry = online.get(uid);
+  if (!state || !entry) return null;
+  return {
+    id: uid,
+    username: entry.user.username,
+    cat: entry.user.cat || null,
+    x: state.x,
+    y: state.y,
+  };
+}
+
+// Todos los gatos de una sala, incluido el propio.
+function worldPlayers(roomId) {
+  const list = [];
+  for (const uid of world.keys()) {
+    if (world.get(uid).room !== roomId) continue;
+    const player = worldPlayer(uid);
+    if (player) list.push(player);
+  }
+  list.sort((a, b) => a.id - b.id);
+  return list;
+}
+
+// Snapshot de la sala para un usuario: lo reciben todas sus pestañas.
+function sendWorldState(uid, roomData) {
+  const me = worldPlayer(uid);
+  if (!me) return;
+  io.to(room(uid)).emit('world:state', {
+    room: worldRoomView(roomData),
+    players: worldPlayers(roomData.id),
+    me,
+  });
+}
+
+// Mete a un gato en una sala: se va de la anterior (los demás ven world:left) y entra en la nueva.
+function enterWorld(uid, roomData) {
+  const previous = world.get(uid);
+  if (previous) {
+    const oldRoom = worldRoom(previous.room);
+    io.in(oldRoom).except(room(uid)).emit('world:left', { id: uid });
+    io.in(room(uid)).socketsLeave(oldRoom);
+    world.delete(uid);
+  }
+  world.set(uid, {
+    userId: uid,
+    room: roomData.id,
+    x: roomData.spawn.x,
+    y: roomData.spawn.y,
+  });
+  io.in(room(uid)).socketsJoin(worldRoom(roomData.id));
+  sendWorldState(uid, roomData);
+  const me = worldPlayer(uid);
+  if (me) io.in(worldRoom(roomData.id)).except(room(uid)).emit('world:join', { player: me });
+}
+
+// Saca al gato del mundo: los demás de la sala ven world:left.
+function leaveWorld(uid) {
+  const state = world.get(uid);
+  if (!state) return;
+  const currentRoom = worldRoom(state.room);
+  io.in(currentRoom).except(room(uid)).emit('world:left', { id: uid });
+  io.in(room(uid)).socketsLeave(currentRoom);
+  world.delete(uid);
+  worldMoves.delete(uid);
+}
+
 function activeGameOf(uid) {
   const e = online.get(uid);
   if (!e || !e.gameId) return null;
@@ -430,12 +531,68 @@ io.on('connection', (socket) => {
     emitToPlayers(g, 'chat:msg', { gameId: g.state.id, from: { id: uid, username: me().username }, text, ts: Date.now() });
   });
 
+  // ---------- El mundo ----------
+
+  socket.on('world:enter', (payload = {}) => {
+    const wanted = typeof payload.room === 'string' && payload.room.trim() ? payload.room.trim() : 'plaza';
+    const roomData = worldRules.getRoom(wanted);
+    if (!roomData) return sendError(socket, 'Esa sala no existe.');
+    enterWorld(uid, roomData);
+  });
+
+  socket.on('world:move', (payload = {}) => {
+    const state = world.get(uid);
+    if (!state) return sendError(socket, 'Primero entra al mundo.');
+    const { x, y } = payload;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return sendError(socket, 'Movimiento inválido.');
+    const roomData = worldRules.getRoom(state.room);
+    if (!roomData) return sendError(socket, 'Esa sala no existe.');
+    if (!worldRules.isInsideRoom(roomData, x, y)) return sendError(socket, 'No puedes salir de la sala.');
+
+    // Anti-abuso: como mucho 12 movimientos por persona cada 1000 ms.
+    const check = worldRules.allowMove(worldMoves.get(uid) || [], Date.now());
+    worldMoves.set(uid, check.times);
+    if (!check.allowed) return sendError(socket, 'Te mueves muy rápido.');
+
+    const nx = Math.round(x);
+    const ny = Math.round(y);
+    const exit = worldRules.exitAt(roomData, nx, ny);
+    const destination = exit ? worldRules.getRoom(exit.to) : null;
+
+    if (destination) {
+      // El gato cae en una salida: cambia de sala.
+      const oldRoom = worldRoom(state.room);
+      io.in(oldRoom).except(room(uid)).emit('world:left', { id: uid });
+      io.in(room(uid)).socketsLeave(oldRoom);
+      world.set(uid, {
+        userId: uid,
+        room: destination.id,
+        x: exit.toSpawn.x,
+        y: exit.toSpawn.y,
+      });
+      io.in(room(uid)).socketsJoin(worldRoom(destination.id));
+      sendWorldState(uid, destination);
+      const player = worldPlayer(uid);
+      if (player) io.in(worldRoom(destination.id)).except(room(uid)).emit('world:join', { player });
+      return;
+    }
+
+    state.x = nx;
+    state.y = ny;
+    io.to(worldRoom(state.room)).emit('world:moved', { id: uid, x: nx, y: ny });
+  });
+
+  socket.on('world:leave', () => {
+    leaveWorld(uid);
+  });
+
   socket.on('disconnect', () => {
     const e = online.get(uid);
     if (!e) return;
     e.sockets.delete(socket.id);
     if (e.sockets.size > 0) return;
     // Última pestaña cerrada.
+    leaveWorld(uid);
     const g = activeGameOf(uid);
     online.delete(uid);
     dropInvitesOf(uid);
