@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Amigatos · Laboratorio del mundo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;padding:16px;background:#fdf1f4;color:#3b2a40;font-family:"Pixelify Sans",monospace}
+  h1{font-size:20px;margin:0 0 6px}
+  p{margin:0 0 12px;font-size:14px}
+  /* el escenario tiene tamaño fijo: las coordenadas lógicas se calculan sobre él */
+  #world-stage{position:relative;width:640px;height:480px;margin:0 auto;overflow:hidden;
+    background:#bfe3f5;box-shadow:0 0 0 4px #3b2a40}
+  #out{margin:12px auto;width:640px;font-size:13px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<h1>🐾 Laboratorio del mundo</h1>
+<p>Prueba de <code>js/world.js</code>: clic en el piso = coordenadas lógicas.</p>
+
+<div id="world-stage"></div>
+<div id="out"></div>
+
+<script src="js/cat-art.js"></script>
+<script src="js/backgrounds.js"></script>
+<script src="js/bg/world.js"></script>
+<script src="js/world.js"></script>
+<script>
+(function () {
+  // cada clic en el piso se guarda aquí con sus coordenadas lógicas
+  window.__labMoves = [];
+
+  var ROOM = {
+    id: 'plaza',
+    name: 'Plaza Bigotes',
+    bg: 'plaza',
+    width: 96,
+    height: 72,
+    exits: [
+      { x: 0, y: 30, w: 8, h: 14, to: 'parque', label: 'Parque Ronroneo' },
+      { x: 88, y: 30, w: 8, h: 14, to: 'cafe', label: 'Café del Ovillo' }
+    ]
+  };
+
+  var catMichi = CatArt.defaultCat();
+  var catNube = CatArt.randomCat();
+
+  var PLAYERS = [
+    { id: 1, username: 'Michi', cat: catMichi, x: 24, y: 20 },
+    { id: 2, username: 'Nube', cat: catNube, x: 70, y: 50 }
+  ];
+  var ME = { id: 1, username: 'Michi', cat: catMichi, x: 24, y: 20 };
+
+  var out = document.getElementById('out');
+
+  WorldUI.mount(document.getElementById('world-stage'));
+  WorldUI.setMoveHandler(function (x, y) {
+    window.__labMoves.push({ x: x, y: y });
+    out.textContent = 'moves: ' + JSON.stringify(window.__labMoves);
+  });
+  WorldUI.applyState({ room: ROOM, players: PLAYERS, me: ME });
+})();
+</script>
+</body>
+</html>
