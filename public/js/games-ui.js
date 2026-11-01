@@ -365,6 +365,7 @@
     // quitar acentos pero conservar la Ñ
     s = s.replace(/Ñ/g, '\u0001');
     try { s = s.normalize('NFD').replace(/[̀-ͯ]/g, ''); } catch (e) { /* noop */ }
+    // eslint-disable-next-line no-control-regex -- \u0001 es un marcador temporal para proteger la Ñ
     s = s.replace(/\u0001/g, 'Ñ');
     return s.replace(/\s+/g, ' ');
   }

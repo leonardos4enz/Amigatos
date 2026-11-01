@@ -20,6 +20,11 @@ for (const file of fs.readdirSync(path.join(__dirname, 'games'))) {
 console.log('[amigatos] juegos:', Object.keys(GAMES).join(', '));
 const PORT = process.env.PORT || 3000;
 let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  // El repo es público: con el secreto de desarrollo cualquiera podría firmar sesiones.
+  console.error('[amigatos] JWT_SECRET es obligatorio en producción.');
+  process.exit(1);
+}
 if (!JWT_SECRET) {
   JWT_SECRET = 'amigatos-dev-secret-cambiame';
   console.warn('[amigatos] ADVERTENCIA: JWT_SECRET no está definido; usando un secreto de desarrollo. ¡Defínelo en producción!');
@@ -446,11 +451,19 @@ io.on('connection', (socket) => {
   });
 });
 
-db.init()
-  .then(() => {
-    server.listen(PORT, () => console.log(`[amigatos] escuchando en http://localhost:${PORT} (db: ${db.mode})`));
-  })
-  .catch((err) => {
+// Arranca el servidor. Los tests llaman a start(0) para usar un puerto libre.
+async function start(port = PORT) {
+  await db.init();
+  await new Promise((resolve) => server.listen(port, resolve));
+  console.log(`[amigatos] escuchando en http://localhost:${server.address().port} (db: ${db.mode})`);
+  return server;
+}
+
+if (require.main === module) {
+  start().catch((err) => {
     console.error('[amigatos] no se pudo iniciar la base de datos:', err);
     process.exit(1);
   });
+}
+
+module.exports = { app, server, io, start };

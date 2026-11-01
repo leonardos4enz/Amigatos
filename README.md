@@ -14,6 +14,23 @@ npm start
 
 Abre http://localhost:3000. Sin `DATABASE_URL` usa memoria: los datos se pierden al reiniciar.
 
+## Verificación
+
+```bash
+npx playwright install chromium   # solo la primera vez
+npm run verify                     # lint + tests del servidor + tests de navegador
+```
+
+- `test/`: lógica de juegos, API REST y multijugador con dos clientes Socket.IO reales (`node --test`).
+- `e2e/`: Playwright. Verifica texto y estado (`window.__amigatos`), nunca capturas.
+
+## Ramas y flota de agentes
+
+- `main` es producción (Easypanel despliega desde aquí).
+- `dev` es donde trabaja la flota de agentes (agent-fleet): sus PRs se mergean solos a `dev` si pasan
+  la verificación, el review y el CI. Lo que te guste al probar `dev`, lo pasas a `main`.
+- Reglas para los agentes: [AGENTS.md](AGENTS.md).
+
 ## Despliegue en Easypanel
 
 1. **Base de datos:** en tu proyecto de Easypanel usa tu servicio Postgres existente (o crea uno) y crea una base,
