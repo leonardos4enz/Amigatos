@@ -141,8 +141,11 @@ Cada juego nuevo vive en **dos archivos propios** y no toca nada más:
   `draw` pinta en pixeles lógicos (≈96×72, pero el alto varía con el contenedor: dibujar adaptándose a `w`,`h`).
   Animadas a 8 fps; `t` en segundos.
 - Escenas en `public/js/bg/indoor.js` y `public/js/bg/outdoor.js`.
-- Escenas del mundo en `public/js/bg/world.js`: `plaza` (Plaza Bigotes), `parque` (Parque Ronroneo)
-  y `cafe` (Café del Ovillo). Son las tres salas del mapa 2D (ver "El mundo (fase 1)").
+- Escenas del mundo, una por archivo en `public/js/bg/rooms/`: `plaza.js` (Plaza Bigotes),
+  `parque.js` (Parque Ronroneo) y `cafe.js` (Café del Ovillo). Son las tres salas del mapa 2D
+  (ver "El mundo (fase 1)"). Las utilidades de dibujo compartidas están en `public/js/bg/pixels.js`
+  (`window.CatBGPixels`): cada escena declara su ancho nativo (`NATIVE_W`) y el envoltorio la escala
+  a la base pedida sin suavizado (`imageSmoothingEnabled = false`).
 
 ## Amigos (añadido v3)
 Amistad **mutua e inmediata** (sin solicitudes): al agregar se guardan ambas direcciones en
