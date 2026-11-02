@@ -245,12 +245,33 @@ inválida.
 | `Te mueves muy rápido.` | más de 12 movimientos en 1000 ms |
 | `Primero entra al mundo.` | `world:move` sin estar en el mundo |
 
+### Escala del escenario (cliente)
+Cada sala tiene una **resolución lógica de 320×200** (16:10). El motor del cliente
+(`public/js/world.js`) calcula una escala **entera** `k = clamp(floor(ancho disponible / 320), 1, 3)`:
+
+- el escenario mide exactamente `320*k` × `200*k` px de CSS (`--world-scale` en
+  `public/css/world-scale.css`);
+- el gato (32×32 lógicos) se pinta a escala 1 y se ve a `32*k` px, con `image-rendering: pixelated`;
+- el canvas del fondo se pinta a `320×200` px lógicos (`CatBG.mount(stage, room.bg, { base: room.width })`).
+
+Nunca hay escalado fraccionario: el pixel art se ve nítido. La escala se recalcula sola cuando
+cambia el ancho disponible.
+
 ### Estado para el cliente (`window.__amigatos`)
 ```js
 window.__amigatos = {
-  room: { id, name, bg, width, height, spawn, exits }, // la sala actual
-  me: { id, username, cat, x, y },                      // mi gato
-  players: [{ id, username, cat, x, y }],               // todos los gatos de la sala
+  room: 'plaza',                    // id de la sala actual
+  roomName: 'Plaza Bigotes',        // nombre de la sala
+  roomWidth: 320,                   // ancho lógico de la sala
+  roomHeight: 200,                  // alto lógico de la sala
+  catHeight: 32,                    // alto del gato en px lógicos
+  walkable: [[{ x, y }, ...], ...], // polígonos del piso caminable (los del servidor)
+  exits: [{ x, y, w, h, to, label }], // salidas de la sala
+  me: { x, y },                     // mi gato (el movimiento lo completa la tarea de movimiento)
+  players: [{ id, username, x, y }], // todos los gatos de la sala
+  scale: 2,                         // escala entera del escenario (1..3)
+  mapOpen: false,                   // el mapa del pueblo está cerrado
+  transition: false,                // no hay cambio de sala en curso
 };
 ```
 Es la forma oficial de probar el mundo (nadie ve la pantalla): el cliente mantiene `window.__amigatos`
