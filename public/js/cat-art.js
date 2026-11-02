@@ -1078,6 +1078,15 @@
         if (alive) addActive(ctrl);
         return ctrl;
       },
+      // El sentido del gato: volteado (mirando a la izquierda) o sin voltear.
+      setFlip: function (f) {
+        var nuevo = !!f;
+        if (nuevo === flip) return ctrl;
+        flip = nuevo;
+        draw(now() - start, true);
+        if (alive) addActive(ctrl);
+        return ctrl;
+      },
       destroy: function () {
         alive = false;
         removeActive(ctrl);

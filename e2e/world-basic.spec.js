@@ -60,24 +60,30 @@ test('una persona explora el mundo, camina por la plaza y vuelve al lobby', asyn
   // 4. Un clic en el piso mueve el gato (lo decide el servidor).
   const stage = page.locator('#world-stage');
   const box = await stage.boundingBox();
+  const t0 = Date.now();
   await stage.click({ position: { x: Math.round(box.width * 0.3), y: Math.round(box.height * 0.3) } });
 
-  // La posición que se publica es la posición actual: el gato camina hacia el
-  // destino, no aparece de golpe en él.
-  const muestras = [];
-  for (let i = 0; i < 14; i++) {
-    muestras.push(await page.evaluate(() => {
-      const w = globalThis.window.__amigatos;
-      return w && w.me ? { x: w.me.x, y: w.me.y } : null;
-    }));
-    await page.waitForTimeout(100);
-  }
+  // El servidor decide el destino: el punto caminable más cercano al clic (el
+  // clic es en el cielo, así que el destino está en el suelo, no en el cielo).
+  // Primero espera a que el gato tenga un destino nuevo (distinto del spawn).
+  await expect.poll(async () => page.evaluate((s) => {
+    const me = globalThis.window.__amigatos && globalThis.window.__amigatos.me;
+    if (!me || !me.target) return false;
+    return me.target.x !== s.x || me.target.y !== s.y;
+  }, spawn)).toBe(true);
   const destino = await page.evaluate(() => globalThis.window.__amigatos.me.target);
-  expect(muestras.some((m) => m && m.x !== spawn.x)).toBe(true);
-  expect(
-    muestras.some((m) => m && m.y < spawn.y && m.y > destino.y),
-    `el gato no ha ido caminando: ${JSON.stringify(muestras)}`
-  ).toBe(true);
+  expect(destino.y).toBeGreaterThanOrEqual(110);
+
+  // El gato camina hasta el destino (la posición la publica el servidor) y no
+  // aparece de golpe en él.
+  await expect.poll(async () => page.evaluate(() => {
+    const me = globalThis.window.__amigatos && globalThis.window.__amigatos.me;
+    if (!me || !me.target) return false;
+    return me.x === me.target.x && me.y === me.target.y;
+  })).toBe(true);
+  expect(Date.now() - t0, 'el gato debería haber caminado hasta el destino').toBeGreaterThan(200);
+  const llegada = await page.evaluate(() => globalThis.window.__amigatos.me);
+  expect({ x: llegada.x, y: llegada.y }).toEqual({ x: destino.x, y: destino.y });
 
   // 5. "Volver al lobby" regresa a la sala y repinta la lista de conectados.
   await page.locator('#btn-world-back').click();

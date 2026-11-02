@@ -36,6 +36,35 @@ async function moveError(p, move) {
   return err;
 }
 
+// Registra una sala de prueba aislada (no toca el catálogo global), ejecuta la
+// prueba y la quita al terminar.
+async function conSala(id, sala, fn) {
+  worldRules.addRoom({ ...sala, id });
+  try {
+    return await fn();
+  } finally {
+    worldRules.removeRoom(id);
+  }
+}
+
+// Una sala con dos zonas separadas: no se puede ir de una a otra.
+function salaPartida(id, extra = {}) {
+  return {
+    id,
+    name: 'Sala partida',
+    bg: 'plaza',
+    width: 320,
+    height: 200,
+    spawn: { x: 50, y: 150 },
+    walkable: [
+      [{ x: 0, y: 110 }, { x: 100, y: 110 }, { x: 100, y: 200 }, { x: 0, y: 200 }],
+      [{ x: 220, y: 110 }, { x: 320, y: 110 }, { x: 320, y: 200 }, { x: 220, y: 200 }],
+    ],
+    exits: [],
+    ...extra,
+  };
+}
+
 // Aserción negativa: comprueba que `event` NO llega al socket en `ms` milisegundos.
 function noEvent(socket, event, ms = 300) {
   return new Promise((resolve) => {
@@ -209,9 +238,10 @@ test('world:move a un punto no caminable deja al gato en el punto caminable más
 });
 
 test('world:move a un punto inalcanzable da error y el gato no se mueve', async () => {
-  // Una sala con dos zonas separadas: no hay camino de una a otra.
+  // Una sala de prueba aislada con dos zonas separadas: no hay camino de una
+  // a otra. No se toca el catálogo global: la sala se registra y se quita.
   const id = 'salaPartida';
-  worldRules.ROOMS[id] = {
+  worldRules.addRoom({
     id,
     name: 'Sala partida',
     bg: 'plaza',
@@ -223,7 +253,7 @@ test('world:move a un punto inalcanzable da error y el gato no se mueve', async 
       [{ x: 220, y: 110 }, { x: 320, y: 110 }, { x: 320, y: 200 }, { x: 220, y: 200 }],
     ],
     exits: [],
-  };
+  });
   try {
     const a = await player();
     const moves = [];
@@ -241,7 +271,7 @@ test('world:move a un punto inalcanzable da error y el gato no se mueve', async 
     const catA = otro.players.find((pl) => pl.id === a.user.id);
     assert.deepEqual({ x: catA.x, y: catA.y }, { x: 50, y: 150 });
   } finally {
-    delete worldRules.ROOMS[id];
+    worldRules.removeRoom(id);
   }
 });
 
@@ -258,6 +288,52 @@ test('no se puede mover más de 12 veces por segundo', async () => {
   const state = await enter(b);
   const catA = state.players.find((pl) => pl.id === a.user.id);
   assert.deepEqual(catA.target, { x: 51, y: 150 });
+});
+
+test('un movimiento imposible no gasta las oportunidades de movimiento', async () => {
+  await conSala('salaPartidaLimite', salaPartida('salaPartidaLimite'), async () => {
+    const a = await player();
+    await enter(a, 'salaPartidaLimite');
+
+    // Doce movimientos imposibles: cada uno sale con su error y ninguno gasta
+    // una de las 12 oportunidades por segundo.
+    for (let i = 0; i < 12; i++) {
+      const { message } = await moveError(a, { x: 250, y: 150 });
+      assert.equal(message, 'No se puede llegar hasta ahí.');
+    }
+
+    // El movimiento siguiente (válido) sigue aceptándose.
+    const moved = waitFor(a.socket, 'world:moved');
+    a.socket.emit('world:move', { x: 20, y: 150 });
+    const m = await moved;
+    assert.deepEqual(m.target, { x: 20, y: 150 });
+  });
+});
+
+test('el servidor publica la posición del gato mientras camina', async () => {
+  const a = await player();
+  await enter(a);
+
+  const moved = waitFor(a.socket, 'world:moved');
+  a.socket.emit('world:move', { x: 250, y: 180 });
+  const m = await moved;
+  assert.deepEqual(m.target, { x: 250, y: 180 });
+
+  // Mientras camina, el servidor publica su posición (el cliente dibuja lo
+  // que dice el servidor). En la plaza puede haber más gatos: solo miramos el
+  // nuestro.
+  const primera = await waitFor(a.socket, 'world:pos', (p) => p.id === a.user.id);
+  assert.equal(primera.id, a.user.id);
+  assert.ok(primera.x > 100, `la posición no avanza: ${JSON.stringify(primera)}`);
+
+  // Y al final llega al destino.
+  const llegada = await waitFor(
+    a.socket,
+    'world:pos',
+    (p) => p.id === a.user.id && p.x === 250 && p.y === 180,
+    8000
+  );
+  assert.deepEqual({ x: llegada.x, y: llegada.y }, { x: 250, y: 180 });
 });
 
 // ------------------------------------------------------------------
@@ -337,10 +413,11 @@ test('un movimiento nuevo cancela el cruce de puerta pendiente', async () => {
 });
 
 test('un movimiento imposible no cancela el cruce de puerta pendiente', async () => {
-  // Una sala con dos zonas separadas y una salida en la primera: el gato no
-  // puede llegar a la otra zona, pero sí a la puerta que tiene al lado.
+  // Una sala de prueba aislada con dos zonas separadas y una salida en la
+  // primera: el gato no puede llegar a la otra zona, pero sí a la puerta que
+  // tiene al lado.
   const id = 'salaPartidaConPuerta';
-  worldRules.ROOMS[id] = {
+  worldRules.addRoom({
     id,
     name: 'Sala partida con puerta',
     bg: 'plaza',
@@ -359,7 +436,7 @@ test('un movimiento imposible no cancela el cruce de puerta pendiente', async ()
         label: 'Plaza Bigotes',
       },
     ],
-  };
+  });
   try {
     const a = await player();
     await enter(a, id);
@@ -380,7 +457,7 @@ test('un movimiento imposible no cancela el cruce de puerta pendiente', async ()
     assert.equal(estado.room.id, 'plaza');
     assert.deepEqual({ x: estado.me.x, y: estado.me.y }, { x: 100, y: 180 });
   } finally {
-    delete worldRules.ROOMS[id];
+    worldRules.removeRoom(id);
   }
 });
 

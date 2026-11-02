@@ -126,6 +126,28 @@ function resolveRoom(room) {
   return room;
 }
 
+// Registra una sala nueva en el catálogo. La sala tiene que pasar la
+// validación del catálogo (spawns caminables, salidas que tocan el piso, etc.):
+// si no pasa, no se registra. Sirve para las salas de prueba de los tests y
+// para las salas que se añadan al mundo.
+function addRoom(room) {
+  if (!room || typeof room.id !== 'string' || !room.id) {
+    throw new Error('La sala necesita un id.');
+  }
+  ROOMS[room.id] = room;
+  const problemas = validateRooms();
+  if (problemas.length > 0) {
+    delete ROOMS[room.id];
+    throw new Error(`Geometría del mundo inválida: ${problemas.join('; ')}`);
+  }
+  return room;
+}
+
+// Quita una sala del catálogo (para las salas de prueba de los tests).
+function removeRoom(id) {
+  return delete ROOMS[id];
+}
+
 // ¿El punto está dentro del rectángulo de la sala (bordes incluidos)?
 function isInsideRoom(room, x, y) {
   if (!room) return false;
@@ -166,6 +188,42 @@ function walkablePolygons(room) {
   const r = resolveRoom(room);
   if (!r || !Array.isArray(r.walkable)) return [];
   return r.walkable.map((poly) => poly.map((p) => ({ x: p.x, y: p.y })));
+}
+
+// ------------------------------------------------------------------
+// caché de geometría por sala
+// ------------------------------------------------------------------
+
+// La geometría de una sala no cambia mientras la sala exista, así que se
+// cachean por sala: los polígonos con sus cajas envolventes, los puntos enteros
+// caminables, la rejilla de celdas y los enlaces entre celdas.
+const caches = new WeakMap();
+
+function cacheOf(room) {
+  let cache = caches.get(room);
+  if (cache) return cache;
+  const polys = [];
+  for (const poly of room.walkable || []) {
+    polys.push({ poly, bounds: boundsOf(poly) });
+  }
+  cache = { polys, links: new Map() };
+  caches.set(room, cache);
+  return cache;
+}
+
+// Rejilla de los puntos enteros caminables de la sala (para nearestWalkable).
+function bitmapOf(room) {
+  const cache = cacheOf(room);
+  if (cache.bitmap) return cache.bitmap;
+  const w = room.width + 1;
+  const bitmap = new Uint8Array(w * (room.height + 1));
+  for (let y = 0; y <= room.height; y++) {
+    for (let x = 0; x <= room.width; x++) {
+      if (isWalkable(room, x, y)) bitmap[y * w + x] = 1;
+    }
+  }
+  cache.bitmap = bitmap;
+  return bitmap;
 }
 
 // Caja envolvente de un polígono (con el borde incluido).
@@ -213,11 +271,13 @@ function isWalkable(room, x, y) {
   const r = resolveRoom(room);
   if (!r || !Array.isArray(r.walkable)) return false;
   if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
-  return r.walkable.some((poly) => {
-    const b = boundsOf(poly);
-    if (x < b.minX || x > b.maxX || y < b.minY || y > b.maxY) return false;
-    return isInsidePolygon(poly, x, y);
-  });
+  const cache = cacheOf(r);
+  for (const item of cache.polys) {
+    const b = item.bounds;
+    if (x < b.minX || x > b.maxX || y < b.minY || y > b.maxY) continue;
+    if (isInsidePolygon(item.poly, x, y)) return true;
+  }
+  return false;
 }
 
 // Punto caminable más cercano al punto dado (búsqueda sobre la retícula entera
@@ -229,22 +289,18 @@ function nearestWalkable(room, x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   if (isWalkable(r, x, y)) return { x, y };
 
-  // Cajas envolventes de los polígonos: solo se miran los puntos que caen en alguna.
-  const cajas = r.walkable.map(boundsOf);
+  const bitmap = bitmapOf(r);
+  const w = r.width + 1;
 
   let best = null;
   let bestD2 = Infinity;
   for (let py = 0; py <= r.height; py++) {
     for (let px = 0; px <= r.width; px++) {
+      if (!bitmap[py * w + px]) continue;
       const dx = px - x;
       const dy = py - y;
       const d2 = dx * dx + dy * dy;
       if (d2 >= bestD2) continue;
-      const enAlgunaCaja = cajas.some(
-        (b) => px >= b.minX && px <= b.maxX && py >= b.minY && py <= b.maxY
-      );
-      if (!enAlgunaCaja) continue;
-      if (!isWalkable(r, px, py)) continue;
       bestD2 = d2;
       best = { x: px, y: py };
     }
@@ -320,7 +376,9 @@ function segmentWalkable(room, a, b) {
   return true;
 }
 
-// Rejilla de celdas de una sala: una celda sirve si su centro es caminable.
+// Rejilla de celdas de una sala: una celda sirve si la celda ENTERA es
+// caminable (se miran todos sus puntos, no solo el centro): así un obstáculo
+// estrecho, de menos de 4 px, no se esconde detrás del centro de la celda.
 // Se cachea porque la geometría de una sala no cambia.
 const grids = new WeakMap();
 
@@ -332,13 +390,52 @@ function gridOf(room) {
   const passable = new Uint8Array(cols * rows);
   for (let cy = 0; cy < rows; cy++) {
     for (let cx = 0; cx < cols; cx++) {
-      const c = cellCenter(cx, cy);
-      if (isWalkable(room, c.x, c.y)) passable[cy * cols + cx] = 1;
+      if (cellWalkable(room, cx, cy)) passable[cy * cols + cx] = 1;
     }
   }
   grid = { cols, rows, passable };
   grids.set(room, grid);
   return grid;
+}
+
+// ¿La celda (cx, cy) es caminable entera? Se comprueban todos sus puntos
+// enteros: un hueco de un solo píxel hace que la celda no sirva.
+function cellWalkable(room, cx, cy) {
+  const x0 = cx * CELL;
+  const y0 = cy * CELL;
+  for (let y = y0; y < y0 + CELL; y++) {
+    for (let x = x0; x < x0 + CELL; x++) {
+      if (!isWalkable(room, x, y)) return false;
+    }
+  }
+  return true;
+}
+
+// Los vecinos de una celda a los que se puede pasar en línea recta por el piso.
+// En diagonal no se cortan esquinas: los dos vecinos ortogonales tienen que
+// ser caminables. Cada enlace se comprueba contra el piso (segmentWalkable),
+// así que la ruta nunca atraviesa un obstáculo, por estrecho que sea.
+function linksOf(room, grid, cx, cy) {
+  const cache = cacheOf(room);
+  const key = cy * grid.cols + cx;
+  let links = cache.links.get(key);
+  if (links) return links;
+  links = [];
+  const cols = grid.cols;
+  for (const [dx, dy] of NEIGHBORS) {
+    const nx = cx + dx;
+    const ny = cy + dy;
+    if (nx < 0 || ny < 0 || nx >= grid.cols || ny >= grid.rows) continue;
+    if (!grid.passable[ny * cols + nx]) continue;
+    if (dx !== 0 && dy !== 0) {
+      if (!grid.passable[cy * cols + (cx + dx)]) continue;
+      if (!grid.passable[(cy + dy) * cols + cx]) continue;
+    }
+    if (!segmentWalkable(room, cellCenter(cx, cy), cellCenter(nx, ny))) continue;
+    links.push({ cx: nx, cy: ny, step: (dx !== 0 && dy !== 0) ? Math.SQRT2 : 1 });
+  }
+  cache.links.set(key, links);
+  return links;
 }
 
 // El centro de celda más cercano al punto (x, y) al que se pueda llegar en
@@ -408,11 +505,11 @@ function heapPop(heap) {
 }
 
 // A* sobre la rejilla de celdas: devuelve las celdas de la ruta (de la
-// partida a la meta) o null si no hay camino.
-function aStar(grid, start, goal) {
+// partida a la meta) o null si no hay camino. Solo se usan los enlaces que
+// están comprobados contra el piso (linksOf), así que la ruta que sale de
+// aquí nunca atraviesa un obstáculo.
+function aStar(room, grid, start, goal) {
   const cols = grid.cols;
-  const rows = grid.rows;
-  const passable = grid.passable;
 
   // Distancia octil: el coste real de los 8 vecinos (nunca sobreestima).
   const heuristic = (cx, cy) => {
@@ -439,26 +536,15 @@ function aStar(grid, start, goal) {
     const cy = (current.key - cx) / cols;
     const g = gScore.get(current.key);
 
-    for (const [dx, dy] of NEIGHBORS) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
-      if (!passable[ny * cols + nx]) continue;
-      // En diagonal no se cortan esquinas: los dos vecinos ortogonales
-      // tienen que ser caminables.
-      if (dx !== 0 && dy !== 0) {
-        if (!passable[cy * cols + (cx + dx)]) continue;
-        if (!passable[(cy + dy) * cols + cx]) continue;
-      }
-      const key = ny * cols + nx;
+    for (const link of linksOf(room, grid, cx, cy)) {
+      const key = link.cy * cols + link.cx;
       if (closed.has(key)) continue;
-      const step = (dx !== 0 && dy !== 0) ? Math.SQRT2 : 1;
-      const next = g + step;
+      const next = g + link.step;
       const previous = gScore.get(key);
       if (previous !== undefined && previous <= next) continue;
       gScore.set(key, next);
       cameFrom.set(key, current.key);
-      heapPush(open, { key, f: next + heuristic(nx, ny) });
+      heapPush(open, { key, f: next + heuristic(link.cx, link.cy) });
     }
   }
 
@@ -481,8 +567,9 @@ function aStar(grid, start, goal) {
 //
 // La ruta va del punto exacto de salida al punto exacto de llegada: entre
 // ellos están los centros de las celdas por las que pasa el gato. Todos los
-// puntos de la ruta están sobre el piso caminable y todos los tramos se
-// comprueban contra el piso: la ruta no corta ninguna esquina.
+// puntos de la ruta están sobre el piso caminable y TODOS los tramos se
+// comprueban contra el piso: la ruta no corta ninguna esquina ni atraviesa un
+// obstáculo, por estrecho que sea.
 function findPath(room, from, to) {
   const r = resolveRoom(room);
   if (!r || !Array.isArray(r.walkable) || r.walkable.length === 0) return null;
@@ -499,7 +586,7 @@ function findPath(room, from, to) {
   const goal = nearestLinkableCell(r, grid, to.x, to.y);
   if (!start || !goal) return null;
 
-  const cells = aStar(grid, start, goal);
+  const cells = aStar(r, grid, start, goal);
   if (!cells) return null;
 
   const puntos = [];
@@ -519,7 +606,23 @@ function findPath(room, from, to) {
     if (last && last.x === p.x && last.y === p.y) continue;
     path.push(p);
   }
+
+  // Comprobación final: cada tramo de la ruta (los enlaces con los centros de
+  // las celdas y los dos extremos) tiene que pasar entero por el piso. Si
+  // alguno se sale, no hay ruta: el gato no se mueve.
+  if (!pathIsWalkable(r, path)) return null;
+
   return path;
+}
+
+// ¿Todos los tramos de la ruta pasan por el piso caminable?
+function pathIsWalkable(room, path) {
+  const r = resolveRoom(room);
+  if (!r || !Array.isArray(path) || path.length === 0) return false;
+  for (let i = 1; i < path.length; i++) {
+    if (!segmentWalkable(r, path[i - 1], path[i])) return false;
+  }
+  return true;
 }
 
 // Longitud de una ruta (en px lógicos).
@@ -675,6 +778,8 @@ module.exports = {
   SPEED,
   isValidRoom,
   getRoom,
+  addRoom,
+  removeRoom,
   isInsideRoom,
   clampToRoom,
   exitAt,
@@ -682,6 +787,7 @@ module.exports = {
   nearestWalkable,
   walkablePolygons,
   findPath,
+  pathIsWalkable,
   pathLength,
   pointAlongPath,
   pathFacing,

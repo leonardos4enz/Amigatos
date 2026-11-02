@@ -194,12 +194,14 @@ fuentes y los muebles grandes quedan **fuera** de los polígonos.
 | `isWalkable(room, x, y)` | ¿El punto está dentro de algún polígono de `room.walkable`? El borde cuenta como dentro. |
 | `nearestWalkable(room, x, y)` | El punto caminable más cercano al punto dado (búsqueda exhaustiva sobre la retícula de la sala). Si el punto ya es caminable, devuelve ese mismo punto. |
 | `walkablePolygons(room)` | Los polígonos de `room.walkable` (copia profunda). |
-| `findPath(room, from, to)` | La ruta entre dos puntos del piso: A* sobre una cuadrícula de celdas de **4 px**. Devuelve la lista de puntos de la ruta (`[{x, y}, ...]`, del punto exacto de salida al punto exacto de llegada) o `null` si no hay camino. Todos los puntos son caminables y todos los tramos se comprueban contra el piso: la ruta no corta ninguna esquina. |
+| `findPath(room, from, to)` | La ruta entre dos puntos del piso: A* sobre una cuadrícula de celdas de **4 px**. Devuelve la lista de puntos de la ruta (`[{x, y}, ...]`, del punto exacto de salida al punto exacto de llegada) o `null` si no hay camino. Todos los puntos son caminables y todos los tramos se comprueban contra el piso: la ruta no corta ninguna esquina ni atraviesa un obstáculo, por estrecho que sea. |
+| `pathIsWalkable(room, path)` | ¿Pasan todos los tramos de la ruta por el piso caminable? |
 | `pathLength(path)` | La longitud de una ruta en px lógicos. |
 | `pointAlongPath(path, distance)` | El punto de la ruta a esa distancia del principio (interpolado). |
 | `pathFacing(path, previous)` | El sentido del gato (`'left'`/`'right'`) según el primer tramo horizontal de la ruta; si la ruta no dice nada, se conserva el anterior. |
 | `segmentWalkable(room, a, b)` | ¿El segmento entre dos puntos pasa entero por el piso caminable? |
 | `exitThreshold(room, exit)` | El umbral de la puerta: el punto caminable más cercano al centro de la salida. |
+| `addRoom(room)` / `removeRoom(id)` | Registran y quitan una sala del catálogo (la sala tiene que pasar `validateRooms`). |
 | `SPEED` | La velocidad de caminata: **60 px lógicos por segundo**. |
 
 `validateRooms()` comprueba el catálogo: avisa de spawns y `toSpawn` no caminables, de salas sin
@@ -218,10 +220,16 @@ El servidor es el que decide por dónde camina el gato:
 - la posición actual de cada gato **no se guarda**: se deriva de la ruta y del tiempo que lleva
   recorriéndola (`pathLength / SPEED` segundos). El servidor sigue siendo la verdad.
 
-La ruta no puede cortar esquinas: los tramos que unen el punto exacto de salida (o de llegada) con el
-centro de la celda más cercana se comprueban contra el piso (`segmentWalkable`). Por eso un punto del
-borde de los adoquines (cuyo centro de celda cae dentro de la fuente) también es un destino válido:
-la ruta llega por el borde, sin atravesar la fuente.
+La ruta no puede cortar esquinas ni atravesar obstáculos:
+
+- una celda de la rejilla solo sirve si la celda **entera** es caminable (se miran todos sus puntos, no
+  solo el centro): un obstáculo estrecho, de menos de 4 px, no se esconde detrás del centro de la celda;
+- cada salto entre celdas se comprueba contra el piso (`segmentWalkable`), también en diagonal, donde no
+  se cortan esquinas;
+- los tramos que unen el punto exacto de salida (o de llegada) con el centro de la celda más cercana se
+  comprueban igual. Por eso un punto del borde de los adoquines (cuyo centro de celda cae dentro de la
+  fuente) también es un destino válido: la ruta llega por el borde, sin atravesar la fuente;
+- al final se comprueba la ruta entera (`pathIsWalkable`): si algún tramo se sale del piso, no hay ruta.
 
 ### Interfaz de las salidas
 - La lista de salidas de la sala (`#world-exits`) pinta cada salida como un `<button>` con el nombre de la
