@@ -336,6 +336,54 @@ test('un movimiento nuevo cancela el cruce de puerta pendiente', async () => {
   assert.ok(sigueEnLaPlaza, 'el gato no debe cruzar la puerta si ya no va a la puerta');
 });
 
+test('un movimiento imposible no cancela el cruce de puerta pendiente', async () => {
+  // Una sala con dos zonas separadas y una salida en la primera: el gato no
+  // puede llegar a la otra zona, pero sí a la puerta que tiene al lado.
+  const id = 'salaPartidaConPuerta';
+  worldRules.ROOMS[id] = {
+    id,
+    name: 'Sala partida con puerta',
+    bg: 'plaza',
+    width: 320,
+    height: 200,
+    spawn: { x: 50, y: 150 },
+    walkable: [
+      [{ x: 0, y: 110 }, { x: 100, y: 110 }, { x: 100, y: 200 }, { x: 0, y: 200 }],
+      [{ x: 220, y: 110 }, { x: 320, y: 110 }, { x: 320, y: 200 }, { x: 220, y: 200 }],
+    ],
+    exits: [
+      {
+        x: 0, y: 130, w: 16, h: 40,
+        to: 'plaza',
+        toSpawn: { x: 100, y: 180 },
+        label: 'Plaza Bigotes',
+      },
+    ],
+  };
+  try {
+    const a = await player();
+    await enter(a, id);
+
+    // El gato empieza a caminar hacia la salida...
+    const moved = waitFor(a.socket, 'world:moved');
+    a.socket.emit('world:move', { x: 4, y: 150 });
+    const m = await moved;
+    assert.deepEqual(m.target, { x: 8, y: 150 });
+
+    // ...pero se le pide un punto al que no se puede llegar: el movimiento se
+    // rechaza y el gato sigue con su camino hacia la puerta.
+    const { message } = await moveError(a, { x: 250, y: 150 });
+    assert.equal(message, 'No se puede llegar hasta ahí.');
+
+    // Al llegar al umbral, cruza a la plaza.
+    const estado = await waitFor(a.socket, 'world:state', (s) => s.room.id === 'plaza', 8000);
+    assert.equal(estado.room.id, 'plaza');
+    assert.deepEqual({ x: estado.me.x, y: estado.me.y }, { x: 100, y: 180 });
+  } finally {
+    delete worldRules.ROOMS[id];
+  }
+});
+
 // ------------------------------------------------------------------
 // salir
 // ------------------------------------------------------------------

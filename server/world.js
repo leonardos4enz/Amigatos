@@ -285,6 +285,9 @@ function exitTouchesWalkable(room, exit) {
 const SPEED = 60;
 // Lado de la celda de la cuadrícula de caminos (px lógicos).
 const CELL = 4;
+// Radio máximo (en celdas) para buscar el centro de celda más cercano al que
+// se pueda llegar en línea recta desde un punto del piso.
+const MAX_LINK_RADIUS = 8;
 
 // Los 8 vecinos de una celda. En diagonal no se cortan esquinas: los dos
 // vecinos ortogonales tienen que ser caminables.
@@ -296,6 +299,76 @@ const NEIGHBORS = [
 // Centro de la celda (cx, cy) de la cuadrícula.
 function cellCenter(cx, cy) {
   return { x: cx * CELL + CELL / 2, y: cy * CELL + CELL / 2 };
+}
+
+// ¿El segmento entre dos puntos pasa entero por el piso caminable?
+// Se mira a saltos de medio píxel, así que tampoco se escapa un hueco estrecho.
+function segmentWalkable(room, a, b) {
+  const r = resolveRoom(room);
+  if (!r || !a || !b) return false;
+  if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) return false;
+  if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) return false;
+  const largo = Math.hypot(b.x - a.x, b.y - a.y);
+  if (largo === 0) return isWalkable(r, a.x, a.y);
+  const pasos = Math.ceil(largo * 2);
+  for (let i = 0; i <= pasos; i++) {
+    const t = i / pasos;
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t;
+    if (!isWalkable(r, x, y)) return false;
+  }
+  return true;
+}
+
+// Rejilla de celdas de una sala: una celda sirve si su centro es caminable.
+// Se cachea porque la geometría de una sala no cambia.
+const grids = new WeakMap();
+
+function gridOf(room) {
+  let grid = grids.get(room);
+  if (grid) return grid;
+  const cols = Math.max(1, Math.ceil(room.width / CELL));
+  const rows = Math.max(1, Math.ceil(room.height / CELL));
+  const passable = new Uint8Array(cols * rows);
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const c = cellCenter(cx, cy);
+      if (isWalkable(room, c.x, c.y)) passable[cy * cols + cx] = 1;
+    }
+  }
+  grid = { cols, rows, passable };
+  grids.set(room, grid);
+  return grid;
+}
+
+// El centro de celda más cercano al punto (x, y) al que se pueda llegar en
+// línea recta: el segmento entre el punto y el centro tiene que ser caminable.
+// Un punto del piso puede caer en una celda cuyo centro NO es caminable (por
+// ejemplo, en el borde de los adoquines que da a la fuente), así que el centro
+// se busca en las celdas de alrededor.
+function nearestLinkableCell(room, grid, x, y) {
+  const cols = grid.cols;
+  const rows = grid.rows;
+  const cx0 = Math.min(Math.max(Math.floor(x / CELL), 0), cols - 1);
+  const cy0 = Math.min(Math.max(Math.floor(y / CELL), 0), rows - 1);
+  for (let radio = 0; radio <= MAX_LINK_RADIUS; radio++) {
+    const candidatos = [];
+    for (let cy = cy0 - radio; cy <= cy0 + radio; cy++) {
+      for (let cx = cx0 - radio; cx <= cx0 + radio; cx++) {
+        if (radio > 0 && Math.abs(cx - cx0) !== radio && Math.abs(cy - cy0) !== radio) continue;
+        if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+        if (!grid.passable[cy * cols + cx]) continue;
+        const c = cellCenter(cx, cy);
+        candidatos.push({ cx, cy, d: Math.hypot(c.x - x, c.y - y) });
+      }
+    }
+    candidatos.sort((p, q) => p.d - q.d);
+    for (const cand of candidatos) {
+      const c = cellCenter(cand.cx, cand.cy);
+      if (segmentWalkable(room, { x, y }, c)) return { cx: cand.cx, cy: cand.cy };
+    }
+  }
+  return null;
 }
 
 // Montículo binario mínimo: guarda los nodos por su prioridad f (el A*).
@@ -334,36 +407,12 @@ function heapPop(heap) {
   return top;
 }
 
-// Ruta entre dos puntos del piso caminable (A* sobre la cuadrícula de celdas
-// de 4 px). Devuelve la lista de puntos de la ruta o null si no hay camino.
-//
-// La ruta va del punto exacto de salida al punto exacto de llegada: los
-// puntos intermedios son los centros de las celdas por las que pasa el gato.
-// Todos los puntos de la ruta están sobre el piso caminable.
-function findPath(room, from, to) {
-  const r = resolveRoom(room);
-  if (!r || !Array.isArray(r.walkable) || r.walkable.length === 0) return null;
-  if (!from || !to) return null;
-  if (!Number.isFinite(from.x) || !Number.isFinite(from.y)) return null;
-  if (!Number.isFinite(to.x) || !Number.isFinite(to.y)) return null;
-  // Los dos extremos tienen que estar sobre el piso caminable.
-  if (!isWalkable(r, from.x, from.y) || !isWalkable(r, to.x, to.y)) return null;
-
-  const cols = Math.max(1, Math.ceil(r.width / CELL));
-  const rows = Math.max(1, Math.ceil(r.height / CELL));
-  const cellOf = (x, y) => ({
-    cx: Math.min(Math.max(Math.floor(x / CELL), 0), cols - 1),
-    cy: Math.min(Math.max(Math.floor(y / CELL), 0), rows - 1),
-  });
-  const walkableCell = (cx, cy) => {
-    if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return false;
-    const c = cellCenter(cx, cy);
-    return isWalkable(r, c.x, c.y);
-  };
-
-  const start = cellOf(from.x, from.y);
-  const goal = cellOf(to.x, to.y);
-  if (!walkableCell(start.cx, start.cy) || !walkableCell(goal.cx, goal.cy)) return null;
+// A* sobre la rejilla de celdas: devuelve las celdas de la ruta (de la
+// partida a la meta) o null si no hay camino.
+function aStar(grid, start, goal) {
+  const cols = grid.cols;
+  const rows = grid.rows;
+  const passable = grid.passable;
 
   // Distancia octil: el coste real de los 8 vecinos (nunca sobreestima).
   const heuristic = (cx, cy) => {
@@ -393,11 +442,13 @@ function findPath(room, from, to) {
     for (const [dx, dy] of NEIGHBORS) {
       const nx = cx + dx;
       const ny = cy + dy;
-      if (!walkableCell(nx, ny)) continue;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+      if (!passable[ny * cols + nx]) continue;
       // En diagonal no se cortan esquinas: los dos vecinos ortogonales
       // tienen que ser caminables.
       if (dx !== 0 && dy !== 0) {
-        if (!walkableCell(cx + dx, cy) || !walkableCell(cx, cy + dy)) continue;
+        if (!passable[cy * cols + (cx + dx)]) continue;
+        if (!passable[(cy + dy) * cols + cx]) continue;
       }
       const key = ny * cols + nx;
       if (closed.has(key)) continue;
@@ -422,18 +473,48 @@ function findPath(room, from, to) {
     key = cameFrom.get(key);
   }
   cells.reverse();
+  return cells;
+}
 
-  // La ruta final: del punto exacto al punto exacto, con los centros de las
-  // celdas intermedias por medio.
-  const points = [{ x: from.x, y: from.y }];
-  for (let i = 1; i < cells.length - 1; i++) {
-    points.push(cellCenter(cells[i].cx, cells[i].cy));
+// Ruta entre dos puntos del piso caminable (A* sobre la cuadrícula de celdas
+// de 4 px). Devuelve la lista de puntos de la ruta o null si no hay camino.
+//
+// La ruta va del punto exacto de salida al punto exacto de llegada: entre
+// ellos están los centros de las celdas por las que pasa el gato. Todos los
+// puntos de la ruta están sobre el piso caminable y todos los tramos se
+// comprueban contra el piso: la ruta no corta ninguna esquina.
+function findPath(room, from, to) {
+  const r = resolveRoom(room);
+  if (!r || !Array.isArray(r.walkable) || r.walkable.length === 0) return null;
+  if (!from || !to) return null;
+  if (!Number.isFinite(from.x) || !Number.isFinite(from.y)) return null;
+  if (!Number.isFinite(to.x) || !Number.isFinite(to.y)) return null;
+  // Los dos extremos tienen que estar sobre el piso caminable.
+  if (!isWalkable(r, from.x, from.y) || !isWalkable(r, to.x, to.y)) return null;
+
+  const grid = gridOf(r);
+  // Los extremos se enlazan con el centro de celda más cercano al que se pueda
+  // llegar en línea recta por el piso.
+  const start = nearestLinkableCell(r, grid, from.x, from.y);
+  const goal = nearestLinkableCell(r, grid, to.x, to.y);
+  if (!start || !goal) return null;
+
+  const cells = aStar(grid, start, goal);
+  if (!cells) return null;
+
+  const puntos = [];
+  if (cells.length === 1 && segmentWalkable(r, from, to)) {
+    // El gato ya está en la celda de destino: se va en línea recta.
+    puntos.push({ x: from.x, y: from.y }, { x: to.x, y: to.y });
+  } else {
+    puntos.push({ x: from.x, y: from.y });
+    for (const celda of cells) puntos.push(cellCenter(celda.cx, celda.cy));
+    puntos.push({ x: to.x, y: to.y });
   }
-  points.push({ x: to.x, y: to.y });
 
   // Sin puntos repetidos.
   const path = [];
-  for (const p of points) {
+  for (const p of puntos) {
     const last = path[path.length - 1];
     if (last && last.x === p.x && last.y === p.y) continue;
     path.push(p);
@@ -476,16 +557,16 @@ function pointAlongPath(path, distance) {
 // el sentido anterior.
 function pathFacing(path, previous) {
   if (!Array.isArray(path) || path.length < 2) return previous;
-  // El primer tramo une el punto de partida con la cuadrícula y el último con
-  // el punto exacto de llegada: los dos pueden llevar un desvío de un par de
-  // píxeles. Los tramos entre centros de celda no: el primero horizontal manda.
-  for (let i = 1; i < path.length - 2; i++) {
+  // Los tramos que unen el punto exacto con el centro de la celda son desvíos
+  // de un par de píxeles (nunca llegan a 3). Los tramos entre centros de celda
+  // valen 4 px: el primero de ellos que va a horizontal manda.
+  for (let i = 0; i < path.length - 1; i++) {
     const dx = path[i + 1].x - path[i].x;
-    if (dx !== 0) return dx < 0 ? 'left' : 'right';
+    if (Math.abs(dx) >= 3) return dx < 0 ? 'left' : 'right';
   }
-  // Si no hay tramos horizontales, manda la dirección de la ruta a nivel de
-  // celda (la columna del punto de partida y la del punto de llegada).
-  const dx = Math.floor(path[path.length - 1].x / CELL) - Math.floor(path[0].x / CELL);
+  // Ruta vertical (o sin tramos horizontales): manda el sentido del recorrido
+  // completo; si tampoco dice nada, se conserva el anterior.
+  const dx = path[path.length - 1].x - path[0].x;
   if (dx < 0) return 'left';
   if (dx > 0) return 'right';
   return previous;
@@ -604,6 +685,7 @@ module.exports = {
   pathLength,
   pointAlongPath,
   pathFacing,
+  segmentWalkable,
   exitThreshold,
   allowMove,
   validateRooms,

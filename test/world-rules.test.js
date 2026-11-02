@@ -19,6 +19,7 @@ const {
   pathLength,
   pointAlongPath,
   pathFacing,
+  segmentWalkable,
   exitThreshold,
   allowMove,
 } = world;
@@ -384,6 +385,40 @@ test('findPath rodea los obstáculos: no los atraviesa y es más larga que la re
   );
 });
 
+test('findPath llega a un punto del piso aunque el centro de su celda no sea caminable', () => {
+  const plaza = getRoom('plaza');
+  // El borde de los adoquines que da a la fuente (x = 140) es suelo, pero el
+  // centro de su celda (x = 142) está dentro de la fuente: la ruta tiene que
+  // poder llegar igual.
+  assert.equal(isWalkable(plaza, 140, 170), true);
+  const path = findPath(plaza, { x: 100, y: 180 }, { x: 140, y: 170 });
+  assert.ok(path, 'hay ruta hasta el borde de los adoquines');
+  assert.deepEqual(path[path.length - 1], { x: 140, y: 170 });
+  for (const punto of path) {
+    assert.equal(isWalkable(plaza, punto.x, punto.y), true, `(${punto.x}, ${punto.y}) no es caminable`);
+  }
+});
+
+test('findPath no corta esquinas: todos los tramos de la ruta pasan por el piso', () => {
+  const trayectos = [
+    { room: getRoom('plaza'), desde: { x: 100, y: 180 }, hasta: { x: 250, y: 180 } },
+    { room: getRoom('plaza'), desde: { x: 100, y: 180 }, hasta: { x: 8, y: 150 } },
+    { room: getRoom('parque'), desde: { x: 240, y: 180 }, hasta: { x: 20, y: 180 } },
+    { room: getRoom('cafe'), desde: { x: 200, y: 180 }, hasta: { x: 30, y: 120 } },
+  ];
+  for (const t of trayectos) {
+    const path = findPath(t.room, t.desde, t.hasta);
+    assert.ok(path, `no hay ruta en "${t.room.id}"`);
+    for (let i = 1; i < path.length; i++) {
+      assert.equal(
+        segmentWalkable(t.room, path[i - 1], path[i]),
+        true,
+        `el tramo ${i} de la ruta de "${t.room.id}" se sale del piso`
+      );
+    }
+  }
+});
+
 test('findPath devuelve null entre dos zonas sin conexión', () => {
   const sala = {
     id: 'dividida',
@@ -435,6 +470,19 @@ test('pathFacing mira el primer tramo horizontal de la ruta', () => {
   assert.equal(pathFacing(findPath(plaza, { x: 100, y: 180 }, { x: 100, y: 120 }), 'right'), 'right');
   // Una ruta vacía tampoco.
   assert.equal(pathFacing([], 'left'), 'left');
+});
+
+test('pathFacing decide el sentido también en rutas cortas', () => {
+  // Con dos puntos, el sentido es el de ese único tramo.
+  assert.equal(pathFacing([{ x: 100, y: 180 }, { x: 60, y: 180 }], 'right'), 'left');
+  assert.equal(pathFacing([{ x: 100, y: 180 }, { x: 140, y: 180 }], 'left'), 'right');
+  // Una ruta vertical no cambia el sentido anterior.
+  assert.equal(pathFacing([{ x: 100, y: 180 }, { x: 100, y: 120 }], 'right'), 'right');
+  // El primer desvío de un par de píxeles no manda: manda el tramo de verdad.
+  assert.equal(
+    pathFacing([{ x: 100, y: 180 }, { x: 102, y: 182 }, { x: 98, y: 182 }], 'right'),
+    'left'
+  );
 });
 
 test('exitThreshold es el punto caminable más cercano al centro de la salida', () => {

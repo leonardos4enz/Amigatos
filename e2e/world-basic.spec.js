@@ -61,10 +61,23 @@ test('una persona explora el mundo, camina por la plaza y vuelve al lobby', asyn
   const stage = page.locator('#world-stage');
   const box = await stage.boundingBox();
   await stage.click({ position: { x: Math.round(box.width * 0.3), y: Math.round(box.height * 0.3) } });
-  await expect.poll(async () => page.evaluate(() => {
-    const w = globalThis.window.__amigatos;
-    return w && w.me ? w.me.x : null;
-  })).not.toBe(spawn.x);
+
+  // La posición que se publica es la posición actual: el gato camina hacia el
+  // destino, no aparece de golpe en él.
+  const muestras = [];
+  for (let i = 0; i < 14; i++) {
+    muestras.push(await page.evaluate(() => {
+      const w = globalThis.window.__amigatos;
+      return w && w.me ? { x: w.me.x, y: w.me.y } : null;
+    }));
+    await page.waitForTimeout(100);
+  }
+  const destino = await page.evaluate(() => globalThis.window.__amigatos.me.target);
+  expect(muestras.some((m) => m && m.x !== spawn.x)).toBe(true);
+  expect(
+    muestras.some((m) => m && m.y < spawn.y && m.y > destino.y),
+    `el gato no ha ido caminando: ${JSON.stringify(muestras)}`
+  ).toBe(true);
 
   // 5. "Volver al lobby" regresa a la sala y repinta la lista de conectados.
   await page.locator('#btn-world-back').click();

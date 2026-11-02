@@ -88,6 +88,63 @@
     return out;
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Rutas: la posición se deriva de la ruta que manda el servidor        */
+  /* ------------------------------------------------------------------ */
+
+  // Velocidad de caminata: 60 px lógicos por segundo (docs/mundo.md §3).
+  var SPEED = 60;
+
+  // Longitud de una ruta (en px lógicos).
+  function pathLength(path) {
+    if (!path || path.length < 2) return 0;
+    var total = 0;
+    for (var i = 1; i < path.length; i++) {
+      total += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+    }
+    return total;
+  }
+
+  // El punto de la ruta a esa distancia del principio (como en el servidor).
+  function pointAlongPath(path, distance) {
+    if (!path || path.length === 0) return null;
+    if (!(distance > 0)) return { x: path[0].x, y: path[0].y };
+    var rest = distance;
+    for (var i = 1; i < path.length; i++) {
+      var dx = path[i].x - path[i - 1].x;
+      var dy = path[i].y - path[i - 1].y;
+      var tramo = Math.hypot(dx, dy);
+      if (rest <= tramo) {
+        var t = tramo === 0 ? 0 : rest / tramo;
+        return { x: path[i - 1].x + dx * t, y: path[i - 1].y + dy * t };
+      }
+      rest -= tramo;
+    }
+    var last = path[path.length - 1];
+    return { x: last.x, y: last.y };
+  }
+
+  // La parte de la ruta que queda por recorrer desde la posición actual
+  // (el servidor puede mandar a un gato que ya va por la mitad de su ruta).
+  function remainingPath(path, x, y) {
+    if (!path || path.length < 2) return null;
+    var mejor = 0;
+    var mejorD = Infinity;
+    for (var i = 0; i < path.length - 1; i++) {
+      var a = path[i];
+      var b = path[i + 1];
+      var dx = b.x - a.x;
+      var dy = b.y - a.y;
+      var len2 = dx * dx + dy * dy;
+      var t = len2 === 0 ? 0 : ((x - a.x) * dx + (y - a.y) * dy) / len2;
+      if (t < 0) t = 0;
+      if (t > 1) t = 1;
+      var d = Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t));
+      if (d < mejorD) { mejorD = d; mejor = i; }
+    }
+    return [{ x: x, y: y }].concat(path.slice(mejor + 1));
+  }
+
   function copyRoom(r) {
     return {
       id: r.id,
@@ -245,7 +302,8 @@
           canvas: null,
           rx: d.x,
           ry: d.y,
-          anim: null
+          anim: null,
+          walk: null
         };
         byId[key] = rec;
         next.push(rec);
@@ -270,7 +328,9 @@
     // los que cambiaron de sitio caminan hasta allí
     for (var k = 0; k < next.length; k++) {
       var r = next[k];
-      if (r.el && (r.rx !== r.x || r.ry !== r.y)) animateTo(r, r.x, r.y);
+      if (!startWalk(r, r.path, r.x, r.y) && r.el && (r.rx !== r.x || r.ry !== r.y)) {
+        animateTo(r, r.x, r.y);
+      }
     }
   }
 
@@ -340,6 +400,24 @@
   /* Animación (interpolación + caminata)                                */
   /* ------------------------------------------------------------------ */
 
+  // El gato recorre la ruta que manda el servidor: su posición se deriva de
+  // ella, a 60 px lógicos por segundo, igual que en el servidor.
+  function startWalk(rec, path, x, y) {
+    rec.walk = null;
+    if (!path || path.length < 2) return false;
+    var resto = remainingPath(path, x, y);
+    if (!resto || resto.length < 2) return false;
+    rec.walk = { path: resto, t0: now(), total: pathLength(resto) };
+    if (!(rec.walk.total > 0)) {
+      rec.walk = null;
+      return false;
+    }
+    rec.anim = null;
+    if (rec.ctrl) rec.ctrl.play('walk');
+    kick();
+    return true;
+  }
+
   function animateTo(rec, tx, ty) {
     if (rec.anim && rec.anim.toX === tx && rec.anim.toY === ty) return;
     rec.anim = { fromX: rec.rx, fromY: rec.ry, toX: tx, toY: ty, t0: now(), dur: WALK_MS };
@@ -354,8 +432,29 @@
   function loop(ts) {
     rafId = null;
     var more = false;
+    var movido = false;
     Object.keys(byId).forEach(function (key) {
       var rec = byId[key];
+      // La ruta que sigue el gato: la posición se deriva de ella.
+      if (rec.walk) {
+        var w = rec.walk;
+        var dist = ((ts - w.t0) / 1000) * SPEED;
+        var punto = pointAlongPath(w.path, dist);
+        if (punto) {
+          rec.x = Math.round(punto.x);
+          rec.y = Math.round(punto.y);
+          rec.rx = punto.x;
+          rec.ry = punto.y;
+          place(rec);
+          movido = true;
+        }
+        if (dist >= w.total) {
+          rec.walk = null;
+          if (rec.ctrl) rec.ctrl.play('idle');
+        } else {
+          more = true;
+        }
+      }
       var a = rec.anim;
       if (!a) return;
       var p = Math.min(1, (ts - a.t0) / a.dur);
@@ -372,6 +471,8 @@
         more = true;
       }
     });
+    // La posición que se publica es la actual, no el destino.
+    if (movido) publish();
     if (more) rafId = requestAnimationFrame(loop);
   }
 
@@ -607,11 +708,16 @@
       rec.target = { x: num(payload.target.x, rec.x), y: num(payload.target.y, rec.y) };
     }
     if (payload.facing === 'left' || payload.facing === 'right') rec.facing = payload.facing;
-    // El destino de la ruta es adonde va: el gato camina hasta allí.
-    var destino = rec.target || { x: num(payload.x, rec.x), y: num(payload.y, rec.y) };
-    rec.x = destino.x;
-    rec.y = destino.y;
-    animateTo(rec, destino.x, destino.y);
+    // La posición actual es la que manda el servidor: el destino es adonde va,
+    // no donde está.
+    rec.x = num(payload.x, rec.x);
+    rec.y = num(payload.y, rec.y);
+    if (!startWalk(rec, rec.path, rec.x, rec.y)) {
+      // Sin ruta (o con una ruta de un solo punto): el gato no se mueve.
+      rec.walk = null;
+      var destino = rec.target || { x: rec.x, y: rec.y };
+      animateTo(rec, destino.x, destino.y);
+    }
     publish();
   }
 

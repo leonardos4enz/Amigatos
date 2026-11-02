@@ -194,10 +194,11 @@ fuentes y los muebles grandes quedan **fuera** de los polígonos.
 | `isWalkable(room, x, y)` | ¿El punto está dentro de algún polígono de `room.walkable`? El borde cuenta como dentro. |
 | `nearestWalkable(room, x, y)` | El punto caminable más cercano al punto dado (búsqueda exhaustiva sobre la retícula de la sala). Si el punto ya es caminable, devuelve ese mismo punto. |
 | `walkablePolygons(room)` | Los polígonos de `room.walkable` (copia profunda). |
-| `findPath(room, from, to)` | La ruta entre dos puntos del piso: A* sobre una cuadrícula de celdas de **4 px**. Devuelve la lista de puntos de la ruta (`[{x, y}, ...]`, del punto exacto de salida al punto exacto de llegada) o `null` si no hay camino. |
+| `findPath(room, from, to)` | La ruta entre dos puntos del piso: A* sobre una cuadrícula de celdas de **4 px**. Devuelve la lista de puntos de la ruta (`[{x, y}, ...]`, del punto exacto de salida al punto exacto de llegada) o `null` si no hay camino. Todos los puntos son caminables y todos los tramos se comprueban contra el piso: la ruta no corta ninguna esquina. |
 | `pathLength(path)` | La longitud de una ruta en px lógicos. |
 | `pointAlongPath(path, distance)` | El punto de la ruta a esa distancia del principio (interpolado). |
 | `pathFacing(path, previous)` | El sentido del gato (`'left'`/`'right'`) según el primer tramo horizontal de la ruta; si la ruta no dice nada, se conserva el anterior. |
+| `segmentWalkable(room, a, b)` | ¿El segmento entre dos puntos pasa entero por el piso caminable? |
 | `exitThreshold(room, exit)` | El umbral de la puerta: el punto caminable más cercano al centro de la salida. |
 | `SPEED` | La velocidad de caminata: **60 px lógicos por segundo**. |
 
@@ -216,6 +217,11 @@ El servidor es el que decide por dónde camina el gato:
 - si **no hay ruta**, el gato no se mueve y se manda el error `"No se puede llegar hasta ahí."`;
 - la posición actual de cada gato **no se guarda**: se deriva de la ruta y del tiempo que lleva
   recorriéndola (`pathLength / SPEED` segundos). El servidor sigue siendo la verdad.
+
+La ruta no puede cortar esquinas: los tramos que unen el punto exacto de salida (o de llegada) con el
+centro de la celda más cercana se comprueban contra el piso (`segmentWalkable`). Por eso un punto del
+borde de los adoquines (cuyo centro de celda cae dentro de la fuente) también es un destino válido:
+la ruta llega por el borde, sin atravesar la fuente.
 
 ### Interfaz de las salidas
 - La lista de salidas de la sala (`#world-exits`) pinta cada salida como un `<button>` con el nombre de la
@@ -261,7 +267,9 @@ El servidor es el que decide por dónde camina el gato:
   segundos): no cambia de sala antes de llegar. Cuando llega, los demás de la sala anterior reciben
   `world:left`, quien se movió recibe `world:state` con la sala nueva (en el `toSpawn` de la salida) y los
   demás de la sala nueva reciben `world:join`.
-- Un movimiento nuevo (o salir del mundo) **cancela** el cruce de puerta pendiente.
+- Un movimiento nuevo **aceptado** (o salir del mundo) cancela el cruce de puerta pendiente. Si el
+  movimiento se rechaza (destino inalcanzable), el gato conserva su ruta: sigue caminoando hacia la
+  puerta y cruza al llegar.
 - Frecuencia: máximo **12 movimientos por persona cada 1000 ms** (ventana deslizante). Al pasarse, el gato
   no se mueve y se manda `error:msg` con `"Te mueves muy rápido."`.
 - Varias pestañas: todas entran y salen de la sala juntas y todas reciben el `world:state`.
@@ -309,3 +317,6 @@ window.__amigatos = {
 ```
 Es la forma oficial de probar el mundo (nadie ve la pantalla): el cliente mantiene `window.__amigatos`
 actualizado con cada `world:state`, `world:join`, `world:left` y `world:moved`.
+
+`x` e `y` son siempre la **posición actual** del gato, nunca su destino: el cliente deriva la posición
+de la ruta que manda el servidor (`path` + `SPEED`), igual que hace el servidor.

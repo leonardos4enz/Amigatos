@@ -628,9 +628,6 @@ io.on('connection', (socket) => {
     const nx = Math.round(x);
     const ny = Math.round(y);
 
-    // Un movimiento nuevo cancela cualquier cruce de puerta pendiente.
-    clearWorldExit(uid);
-
     // Si el punto pedido cae dentro de una salida, el gato camina hasta el
     // umbral de la puerta; si no, el destino es el punto caminable más cercano.
     const exit = worldRules.exitAt(roomData, nx, ny);
@@ -648,15 +645,21 @@ io.on('connection', (socket) => {
     const path = worldRules.findPath(roomData, start, target);
     if (!path) return sendError(socket, 'No se puede llegar hasta ahí.');
 
+    // El movimiento es válido: a partir de aquí (y solo aquí) se cancela el
+    // cruce de puerta pendiente. Si el movimiento se rechaza, el gato sigue
+    // con su ruta anterior (hacia la puerta) y cruza cuando llega.
+    clearWorldExit(uid);
+
     state.path = path;
     state.target = { x: target.x, y: target.y };
     state.startedAt = Date.now();
     state.facing = worldRules.pathFacing(path, state.facing);
 
+    const position = worldPosition(state);
     io.to(worldRoom(state.room)).emit('world:moved', {
       id: uid,
-      x: Math.round(path[0].x),
-      y: Math.round(path[0].y),
+      x: Math.round(position.x),
+      y: Math.round(position.y),
       path: path.map((p) => ({ x: p.x, y: p.y })),
       target: { x: target.x, y: target.y },
       facing: state.facing,
