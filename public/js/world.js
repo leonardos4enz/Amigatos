@@ -77,6 +77,17 @@
     return out;
   }
 
+  // Copia de una lista de puntos: [{x, y}, ...]
+  function copyPoints(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i] || {};
+      out.push({ x: num(p.x, 0), y: num(p.y, 0) });
+    }
+    return out;
+  }
+
   function copyRoom(r) {
     return {
       id: r.id,
@@ -124,6 +135,9 @@
       cat: rec.cat,
       x: rec.x,
       y: rec.y,
+      target: rec.target,
+      facing: rec.facing,
+      path: rec.path,
       isMe: rec.isMe
     };
   }
@@ -203,6 +217,9 @@
         rec.isMe = d.isMe;
         rec.x = d.x;
         rec.y = d.y;
+        rec.target = d.target || null;
+        rec.facing = d.facing || rec.facing;
+        rec.path = d.path || null;
         next.push(rec);
         if (rec.el) {
           // el gato propio se dibuja aparte de los demás
@@ -218,6 +235,9 @@
           cat: d.cat,
           x: d.x,
           y: d.y,
+          target: d.target || null,
+          facing: d.facing || 'right',
+          path: d.path || null,
           isMe: d.isMe,
           el: null,
           ctrl: null,
@@ -502,6 +522,9 @@
         cat: (p.cat && typeof p.cat === 'object') ? p.cat : null,
         x: num(p.x, 0),
         y: num(p.y, 0),
+        target: (p.target && typeof p.target === 'object') ? { x: num(p.target.x, 0), y: num(p.target.y, 0) } : null,
+        facing: p.facing === 'left' || p.facing === 'right' ? p.facing : 'right',
+        path: copyPoints(p.path),
         isMe: meId !== null && String(p.id) === meId
       });
     }
@@ -520,6 +543,11 @@
       if (m.cat && typeof m.cat === 'object') meRec.cat = m.cat;
       meRec.x = num(m.x, meRec.x);
       meRec.y = num(m.y, meRec.y);
+      if (m.target && typeof m.target === 'object') {
+        meRec.target = { x: num(m.target.x, meRec.x), y: num(m.target.y, meRec.y) };
+      }
+      if (m.facing === 'left' || m.facing === 'right') meRec.facing = m.facing;
+      meRec.path = copyPoints(m.path);
       meRec.isMe = true;
       if (idx < 0) list.push(meRec);
     }
@@ -545,6 +573,11 @@
     if (p.cat && typeof p.cat === 'object') d.cat = p.cat;
     d.x = num(p.x, d.x);
     d.y = num(p.y, d.y);
+    if (p.target && typeof p.target === 'object') {
+      d.target = { x: num(p.target.x, d.x), y: num(p.target.y, d.y) };
+    }
+    if (p.facing === 'left' || p.facing === 'right') d.facing = p.facing;
+    d.path = copyPoints(p.path);
     d.isMe = isMe;
     if (!existing) list.push(d);
 
@@ -568,9 +601,17 @@
     if (!payload || payload.id == null) return;
     var rec = byId[String(payload.id)];
     if (!rec) return;
-    rec.x = num(payload.x, rec.x);
-    rec.y = num(payload.y, rec.y);
-    animateTo(rec, rec.x, rec.y);
+    // El servidor manda la ruta que sigue el gato y su posición actual (x, y).
+    rec.path = copyPoints(payload.path);
+    if (payload.target && typeof payload.target === 'object') {
+      rec.target = { x: num(payload.target.x, rec.x), y: num(payload.target.y, rec.y) };
+    }
+    if (payload.facing === 'left' || payload.facing === 'right') rec.facing = payload.facing;
+    // El destino de la ruta es adonde va: el gato camina hasta allí.
+    var destino = rec.target || { x: num(payload.x, rec.x), y: num(payload.y, rec.y) };
+    rec.x = destino.x;
+    rec.y = destino.y;
+    animateTo(rec, destino.x, destino.y);
     publish();
   }
 
@@ -579,10 +620,16 @@
       room: copyRoom(model.room),
       scale: scale,
       players: model.all.map(function (rec) {
-        return { id: rec.id, username: rec.username, cat: rec.cat, x: rec.x, y: rec.y };
+        return {
+          id: rec.id, username: rec.username, cat: rec.cat, x: rec.x, y: rec.y,
+          target: rec.target, facing: rec.facing
+        };
       }),
       me: model.me
-        ? { id: model.me.id, username: model.me.username, cat: model.me.cat, x: model.me.x, y: model.me.y }
+        ? {
+          id: model.me.id, username: model.me.username, cat: model.me.cat,
+          x: model.me.x, y: model.me.y, target: model.me.target, facing: model.me.facing
+        }
         : null
     };
   }
@@ -601,9 +648,12 @@
       exits: r.exits.map(function (e) {
         return { x: e.x, y: e.y, w: e.w, h: e.h, to: e.to, label: e.label };
       }),
-      me: model.me ? { x: model.me.x, y: model.me.y } : null,
+      me: model.me ? { x: model.me.x, y: model.me.y, target: model.me.target, facing: model.me.facing } : null,
       players: model.all.map(function (rec) {
-        return { id: rec.id, username: rec.username, x: rec.x, y: rec.y };
+        return {
+          id: rec.id, username: rec.username, x: rec.x, y: rec.y,
+          target: rec.target, facing: rec.facing
+        };
       }),
       scale: scale,
       mapOpen: false,

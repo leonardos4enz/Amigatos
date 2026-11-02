@@ -188,17 +188,34 @@ fuentes y los muebles grandes quedan **fuera** de los polígonos.
 - El `toSpawn` de una salida no cae dentro de ninguna salida de la sala destino (si no, el gato rebota).
 - Los rectángulos de las salidas están pegados al borde del piso caminable: su zona interior lo toca.
 
-`server/world.js` exporta tres funciones puras sobre la geometría:
+`server/world.js` exporta funciones puras sobre la geometría:
 | Función | Qué hace |
 |---|---|
 | `isWalkable(room, x, y)` | ¿El punto está dentro de algún polígono de `room.walkable`? El borde cuenta como dentro. |
 | `nearestWalkable(room, x, y)` | El punto caminable más cercano al punto dado (búsqueda exhaustiva sobre la retícula de la sala). Si el punto ya es caminable, devuelve ese mismo punto. |
 | `walkablePolygons(room)` | Los polígonos de `room.walkable` (copia profunda). |
+| `findPath(room, from, to)` | La ruta entre dos puntos del piso: A* sobre una cuadrícula de celdas de **4 px**. Devuelve la lista de puntos de la ruta (`[{x, y}, ...]`, del punto exacto de salida al punto exacto de llegada) o `null` si no hay camino. |
+| `pathLength(path)` | La longitud de una ruta en px lógicos. |
+| `pointAlongPath(path, distance)` | El punto de la ruta a esa distancia del principio (interpolado). |
+| `pathFacing(path, previous)` | El sentido del gato (`'left'`/`'right'`) según el primer tramo horizontal de la ruta; si la ruta no dice nada, se conserva el anterior. |
+| `exitThreshold(room, exit)` | El umbral de la puerta: el punto caminable más cercano al centro de la salida. |
+| `SPEED` | La velocidad de caminata: **60 px lógicos por segundo**. |
 
 `validateRooms()` comprueba el catálogo: avisa de spawns y `toSpawn` no caminables, de salas sin
 polígonos y de salidas cuya zona interior no toca el piso caminable. El módulo hace una autocomprobación
 al cargarse: si hay problemas, `require('server/world')` lanza y el servidor no arranca con geometría
 inválida.
+
+### Rutas y velocidad
+El servidor es el que decide por dónde camina el gato:
+
+- el destino pedido se ajusta al **punto caminable más cercano** (`nearestWalkable`): nunca se camina
+  por el cielo;
+- la ruta se calcula con `findPath` (A* sobre celdas de 4 px): si la línea recta pasa por un obstáculo,
+  el gato lo rodea;
+- si **no hay ruta**, el gato no se mueve y se manda el error `"No se puede llegar hasta ahí."`;
+- la posición actual de cada gato **no se guarda**: se deriva de la ruta y del tiempo que lleva
+  recorriéndola (`pathLength / SPEED` segundos). El servidor sigue siendo la verdad.
 
 ### Interfaz de las salidas
 - La lista de salidas de la sala (`#world-exits`) pinta cada salida como un `<button>` con el nombre de la
@@ -209,7 +226,8 @@ inválida.
 ### Cliente → servidor
 - `world:enter` `{ room? }` — entra al mundo; sin `room` entra a `plaza`. Si ya estaba en el mundo, sale
   primero de la sala anterior (los demás reciben `world:left`) y luego entra en la nueva.
-- `world:move` `{ x, y }` — pide mover el gato a un punto del piso (coordenadas lógicas enteras).
+- `world:move` `{ x, y }` — pide mover el gato a un punto (coordenadas lógicas enteras). El servidor lo
+  ajusta al punto caminable más cercano, calcula la ruta y decide el destino.
 - `world:leave` — sale del mundo (vuelve al lobby).
 
 ### Servidor → cliente
@@ -217,19 +235,33 @@ inválida.
   - `room` = `{ id, name, bg, width, height, spawn: {x, y}, walkable: [[{x, y}, ...], ...], exits: [{x, y, w, h, to, toSpawn: {x, y}, label}] }`
   - `room.walkable` = los polígonos del piso caminable de la sala (los mismos puntos que define
     `server/world.js`), para que el cliente pueda predecir el punto caminable más cercano.
-  - `players` = **todos** los gatos de la sala, incluido el propio: `{ id, username, cat, x, y }`
-  - `me` = el propio gato: `{ id, username, cat, x, y }`
-- `world:join` `{ player }` — alguien más entró a tu sala: `{ id, username, cat, x, y }`.
+  - `players` = **todos** los gatos de la sala, incluido el propio:
+    `{ id, username, cat, x, y, target, facing, path }`
+  - `me` = el propio gato: `{ id, username, cat, x, y, target, facing, path }`
+  - `x`, `y` = la **posición actual** del gato (derivada de su ruta y del tiempo que lleva caminándola).
+  - `target` = `{ x, y }` de destino (a dónde va), `facing` = `'left'` o `'right'`, `path` = la ruta que
+    sigue: `[{ x, y }, ...]`.
+- `world:join` `{ player }` — alguien más entró a tu sala: `{ id, username, cat, x, y, target, facing, path }`.
 - `world:left` `{ id }` — alguien salió de tu sala o se fue del mundo.
-- `world:moved` `{ id, x, y }` — alguien se movió en tu sala.
+- `world:moved` `{ id, x, y, path, target, facing }` — alguien se movió en tu sala: la ruta que sigue
+  (`path`), su destino (`target`), su sentido (`facing`) y su posición actual (`x`, `y`).
 
 ### Reglas del servidor
 - El servidor decide la posición: si `x`/`y` no son finitos, error; si están fuera de la sala, error y el
-  gato **no** se mueve; si son válidos se redondean a enteros, se guardan y se emite `world:moved` a todo
-  el room `world:<room>` (incluido quien se movió).
-- Cambio de sala: si la posición nueva cae dentro de una salida, el gato pasa a la sala `to` en el
-  `toSpawn` de esa salida. Entonces los demás de la sala anterior reciben `world:left`, quien se movió
-  recibe `world:state` con la sala nueva y los demás de la sala nueva reciben `world:join`.
+  gato **no** se mueve; si son válidos se redondean a enteros.
+- El destino es el **punto caminable más cercano** al punto pedido (nunca el cielo) y la ruta la calcula
+  el servidor (`findPath`). Si no hay ruta, el gato no se mueve y se manda
+  `error:msg` con `"No se puede llegar hasta ahí."`.
+- La posición actual de un gato se **deriva** de su ruta: el gato camina a `SPEED` (60 px lógicos por
+  segundo) y su posición en cada momento sale de `pointAlongPath`. El servidor no guarda la posición.
+- Al mover a un gato se emite `world:moved` a todo el room `world:<room>` (incluido quien se movió) con
+  la ruta, el destino, el sentido y la posición actual.
+- Cambio de sala: si el punto pedido cae dentro de una salida, el gato **camina hasta el umbral** de la
+  puerta (`exitThreshold`) y **el cambio de sala se difiere hasta que llega** (`pathLength / SPEED`
+  segundos): no cambia de sala antes de llegar. Cuando llega, los demás de la sala anterior reciben
+  `world:left`, quien se movió recibe `world:state` con la sala nueva (en el `toSpawn` de la salida) y los
+  demás de la sala nueva reciben `world:join`.
+- Un movimiento nuevo (o salir del mundo) **cancela** el cruce de puerta pendiente.
 - Frecuencia: máximo **12 movimientos por persona cada 1000 ms** (ventana deslizante). Al pasarse, el gato
   no se mueve y se manda `error:msg` con `"Te mueves muy rápido."`.
 - Varias pestañas: todas entran y salen de la sala juntas y todas reciben el `world:state`.
@@ -242,6 +274,7 @@ inválida.
 | `Esa sala no existe.` | `world:enter` con una sala desconocida |
 | `Movimiento inválido.` | `world:move` con `x` o `y` que no es un número finito |
 | `No puedes salir de la sala.` | `world:move` con una posición fuera de 0..width / 0..height |
+| `No se puede llegar hasta ahí.` | `world:move` a un punto sin ruta posible (el gato no se mueve) |
 | `Te mueves muy rápido.` | más de 12 movimientos en 1000 ms |
 | `Primero entra al mundo.` | `world:move` sin estar en el mundo |
 
@@ -267,8 +300,8 @@ window.__amigatos = {
   catHeight: 32,                    // alto del gato en px lógicos
   walkable: [[{ x, y }, ...], ...], // polígonos del piso caminable (los del servidor)
   exits: [{ x, y, w, h, to, label }], // salidas de la sala
-  me: { x, y },                     // mi gato (el movimiento lo completa la tarea de movimiento)
-  players: [{ id, username, x, y }], // todos los gatos de la sala
+  me: { x, y, target, facing },    // mi gato (la posición la completa la ruta del servidor)
+  players: [{ id, username, x, y, target, facing }], // todos los gatos de la sala
   scale: 2,                         // escala entera del escenario (1..3)
   mapOpen: false,                   // el mapa del pueblo está cerrado
   transition: false,                // no hay cambio de sala en curso

@@ -228,10 +228,14 @@ const room = (uid) => `user:${uid}`;
 const newId = () => crypto.randomBytes(6).toString('hex');
 
 // ---------- El mundo ----------
-// userId -> { userId, room, x, y }: dónde está cada gato en el mundo (el servidor decide).
+// userId -> { userId, room, path, target, startedAt, facing }: dónde está cada gato
+// en el mundo. La posición actual NO se guarda: se deriva de la ruta y del tiempo
+// que lleva caminándola (el servidor es la verdad).
 const world = new Map();
 // userId -> marcas de tiempo (ms) de los movimientos aceptados (ventana deslizante).
 const worldMoves = new Map();
+// userId -> { timer, exit }: cruce de puerta pendiente (el gato camina hasta el umbral).
+const worldExits = new Map();
 
 // Room de Socket.IO de una sala del mundo.
 const worldRoom = (roomId) => `world:${roomId}`;
@@ -260,17 +264,30 @@ function worldRoomView(roomData) {
   };
 }
 
+// La posición actual de un gato: se deriva de la ruta que sigue y del tiempo
+// que lleva recorriéndola (a 60 px lógicos por segundo).
+function worldPosition(state, now = Date.now()) {
+  const path = state.path || [];
+  if (path.length === 0) return { x: 0, y: 0 };
+  const travelled = Math.max(0, ((now - state.startedAt) / 1000) * worldRules.SPEED);
+  return worldRules.pointAlongPath(path, travelled);
+}
+
 // Un gato del mundo tal como se lo manda al cliente.
 function worldPlayer(uid) {
   const state = world.get(uid);
   const entry = online.get(uid);
   if (!state || !entry) return null;
+  const position = worldPosition(state);
   return {
     id: uid,
     username: entry.user.username,
     cat: entry.user.cat || null,
-    x: state.x,
-    y: state.y,
+    x: Math.round(position.x),
+    y: Math.round(position.y),
+    target: state.target ? { x: state.target.x, y: state.target.y } : null,
+    facing: state.facing,
+    path: (state.path || []).map((p) => ({ x: p.x, y: p.y })),
   };
 }
 
@@ -301,16 +318,20 @@ function sendWorldState(uid, roomData) {
 function enterWorld(uid, roomData) {
   const previous = world.get(uid);
   if (previous) {
+    clearWorldExit(uid);
     const oldRoom = worldRoom(previous.room);
     io.in(oldRoom).except(room(uid)).emit('world:left', { id: uid });
     io.in(room(uid)).socketsLeave(oldRoom);
     world.delete(uid);
   }
+  const spawn = roomData.spawn;
   world.set(uid, {
     userId: uid,
     room: roomData.id,
-    x: roomData.spawn.x,
-    y: roomData.spawn.y,
+    path: [{ x: spawn.x, y: spawn.y }],
+    target: { x: spawn.x, y: spawn.y },
+    startedAt: Date.now(),
+    facing: 'right',
   });
   io.in(room(uid)).socketsJoin(worldRoom(roomData.id));
   sendWorldState(uid, roomData);
@@ -322,11 +343,58 @@ function enterWorld(uid, roomData) {
 function leaveWorld(uid) {
   const state = world.get(uid);
   if (!state) return;
+  clearWorldExit(uid);
   const currentRoom = worldRoom(state.room);
   io.in(currentRoom).except(room(uid)).emit('world:left', { id: uid });
   io.in(room(uid)).socketsLeave(currentRoom);
   world.delete(uid);
   worldMoves.delete(uid);
+}
+
+// Cancela el cruce de puerta pendiente de un gato (si lo hay).
+function clearWorldExit(uid) {
+  const pending = worldExits.get(uid);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  worldExits.delete(uid);
+}
+
+// El gato cruza a la sala de la salida: se va de la actual (los demás ven
+// world:left) y entra en la nueva por su toSpawn.
+function crossWorldExit(uid, exit) {
+  const state = world.get(uid);
+  if (!state) return;
+  const destination = worldRules.getRoom(exit.to);
+  if (!destination) return;
+
+  const oldRoom = worldRoom(state.room);
+  io.in(oldRoom).except(room(uid)).emit('world:left', { id: uid });
+  io.in(room(uid)).socketsLeave(oldRoom);
+
+  const spawn = exit.toSpawn;
+  state.room = destination.id;
+  state.path = [{ x: spawn.x, y: spawn.y }];
+  state.target = { x: spawn.x, y: spawn.y };
+  state.startedAt = Date.now();
+
+  io.in(room(uid)).socketsJoin(worldRoom(destination.id));
+  sendWorldState(uid, destination);
+  const player = worldPlayer(uid);
+  if (player) io.in(worldRoom(destination.id)).except(room(uid)).emit('world:join', { player });
+}
+
+// El gato camina hasta el umbral de la puerta y cruza al llegar: el cambio de
+// sala se difiere hasta que termina el trayecto (pathLength / SPEED).
+function scheduleWorldExit(uid, exit, path) {
+  clearWorldExit(uid);
+  const delay = (worldRules.pathLength(path) / worldRules.SPEED) * 1000;
+  const timer = setTimeout(() => {
+    worldExits.delete(uid);
+    crossWorldExit(uid, exit);
+  }, delay);
+  // El temporizador no tiene que tener vivo al proceso.
+  if (typeof timer.unref === 'function') timer.unref();
+  worldExits.set(uid, { timer, exit });
 }
 
 function activeGameOf(uid) {
@@ -559,30 +627,44 @@ io.on('connection', (socket) => {
 
     const nx = Math.round(x);
     const ny = Math.round(y);
+
+    // Un movimiento nuevo cancela cualquier cruce de puerta pendiente.
+    clearWorldExit(uid);
+
+    // Si el punto pedido cae dentro de una salida, el gato camina hasta el
+    // umbral de la puerta; si no, el destino es el punto caminable más cercano.
     const exit = worldRules.exitAt(roomData, nx, ny);
-    const destination = exit ? worldRules.getRoom(exit.to) : null;
+    const target = exit
+      ? worldRules.exitThreshold(roomData, exit)
+      : worldRules.nearestWalkable(roomData, nx, ny);
+    if (!target) return sendError(socket, 'No se puede llegar hasta ahí.');
 
-    if (destination) {
-      // El gato cae en una salida: cambia de sala.
-      const oldRoom = worldRoom(state.room);
-      io.in(oldRoom).except(room(uid)).emit('world:left', { id: uid });
-      io.in(room(uid)).socketsLeave(oldRoom);
-      world.set(uid, {
-        userId: uid,
-        room: destination.id,
-        x: exit.toSpawn.x,
-        y: exit.toSpawn.y,
-      });
-      io.in(room(uid)).socketsJoin(worldRoom(destination.id));
-      sendWorldState(uid, destination);
-      const player = worldPlayer(uid);
-      if (player) io.in(worldRoom(destination.id)).except(room(uid)).emit('world:join', { player });
-      return;
-    }
+    // El servidor decide la ruta: si no hay camino, el gato no se mueve.
+    const from = worldPosition(state);
+    const start = worldRules.isWalkable(roomData, from.x, from.y)
+      ? from
+      : worldRules.nearestWalkable(roomData, from.x, from.y);
+    if (!start) return sendError(socket, 'No se puede llegar hasta ahí.');
+    const path = worldRules.findPath(roomData, start, target);
+    if (!path) return sendError(socket, 'No se puede llegar hasta ahí.');
 
-    state.x = nx;
-    state.y = ny;
-    io.to(worldRoom(state.room)).emit('world:moved', { id: uid, x: nx, y: ny });
+    state.path = path;
+    state.target = { x: target.x, y: target.y };
+    state.startedAt = Date.now();
+    state.facing = worldRules.pathFacing(path, state.facing);
+
+    io.to(worldRoom(state.room)).emit('world:moved', {
+      id: uid,
+      x: Math.round(path[0].x),
+      y: Math.round(path[0].y),
+      path: path.map((p) => ({ x: p.x, y: p.y })),
+      target: { x: target.x, y: target.y },
+      facing: state.facing,
+    });
+
+    // Si el destino era el umbral de una salida, el cambio de sala se difiere
+    // hasta que el gato llega: no cambia de sala antes de tiempo.
+    if (exit) scheduleWorldExit(uid, exit, path);
   });
 
   socket.on('world:leave', () => {

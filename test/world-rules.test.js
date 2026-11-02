@@ -6,6 +6,7 @@ const world = require('../server/world');
 
 const {
   ROOMS,
+  SPEED,
   isValidRoom,
   getRoom,
   isInsideRoom,
@@ -14,6 +15,11 @@ const {
   isWalkable,
   nearestWalkable,
   walkablePolygons,
+  findPath,
+  pathLength,
+  pointAlongPath,
+  pathFacing,
+  exitThreshold,
   allowMove,
 } = world;
 
@@ -324,6 +330,132 @@ test('walkablePolygons devuelve una copia: el catálogo no se puede tocar', () =
   polys[0][0].x = -999;
   assert.notEqual(ROOMS.plaza.walkable[0][0].x, -999);
   assert.equal(walkablePolygons(getRoom('nope')).length, 0);
+});
+
+// ------------------------------------------------------------------
+// rutas: A* sobre la cuadrícula de celdas de 4 px
+// ------------------------------------------------------------------
+
+test('la velocidad de caminata es 60 px lógicos por segundo', () => {
+  assert.equal(SPEED, 60);
+});
+
+test('findPath encuentra una ruta entre dos puntos del piso', () => {
+  const plaza = getRoom('plaza');
+  const desde = { x: 100, y: 180 };
+  const hasta = { x: 250, y: 180 };
+  const path = findPath(plaza, desde, hasta);
+
+  assert.ok(Array.isArray(path), 'findPath devuelve una lista de puntos');
+  assert.ok(path.length >= 2, 'la ruta tiene al menos dos puntos');
+  // La ruta empieza en el punto de partida y acaba en el de llegada.
+  assert.deepEqual(path[0], desde);
+  assert.deepEqual(path[path.length - 1], hasta);
+  // Todos los puntos de la ruta son caminables.
+  for (const punto of path) {
+    assert.equal(
+      isWalkable(plaza, punto.x, punto.y),
+      true,
+      `(${punto.x}, ${punto.y}) debería ser caminable`
+    );
+  }
+});
+
+test('findPath rodea los obstáculos: no los atraviesa y es más larga que la recta', () => {
+  const plaza = getRoom('plaza');
+  // La fuente de la plaza ocupa x 140..180, y 145..200: la línea recta entre
+  // estos dos puntos la atraviesa.
+  const desde = { x: 100, y: 180 };
+  const hasta = { x: 250, y: 180 };
+  const path = findPath(plaza, desde, hasta);
+  assert.ok(path);
+
+  // Ningún punto de la ruta está dentro de la fuente.
+  for (const punto of path) {
+    const enLaFuente = punto.x > 140 && punto.x < 180 && punto.y > 145;
+    assert.equal(enLaFuente, false, `(${punto.x}, ${punto.y}) está dentro de la fuente`);
+  }
+
+  // Y la ruta es más larga que la distancia recta.
+  const recta = Math.hypot(hasta.x - desde.x, hasta.y - desde.y);
+  assert.ok(
+    pathLength(path) > recta,
+    `la ruta (${pathLength(path)}) debería ser más larga que la recta (${recta})`
+  );
+});
+
+test('findPath devuelve null entre dos zonas sin conexión', () => {
+  const sala = {
+    id: 'dividida',
+    width: 320,
+    height: 200,
+    walkable: [
+      [{ x: 0, y: 110 }, { x: 100, y: 110 }, { x: 100, y: 200 }, { x: 0, y: 200 }],
+      [{ x: 220, y: 110 }, { x: 320, y: 110 }, { x: 320, y: 200 }, { x: 220, y: 200 }],
+    ],
+    exits: [],
+  };
+  assert.equal(findPath(sala, { x: 50, y: 150 }, { x: 250, y: 150 }), null);
+  // Pero sí hay ruta dentro de cada zona.
+  assert.ok(findPath(sala, { x: 50, y: 150 }, { x: 20, y: 190 }));
+});
+
+test('findPath no acepta puntos que no están sobre el piso', () => {
+  const plaza = getRoom('plaza');
+  assert.equal(findPath(plaza, { x: 160, y: 20 }, { x: 100, y: 180 }), null);
+  assert.equal(findPath(plaza, { x: 100, y: 180 }, { x: 160, y: 20 }), null);
+  assert.equal(findPath(plaza, { x: 100, y: 180 }, { x: NaN, y: 20 }), null);
+  assert.equal(findPath(plaza, null, { x: 100, y: 180 }), null);
+  assert.equal(findPath(null, { x: 100, y: 180 }, { x: 100, y: 150 }), null);
+});
+
+test('pathLength suma los tramos de la ruta', () => {
+  assert.equal(pathLength([]), 0);
+  assert.equal(pathLength([{ x: 0, y: 0 }]), 0);
+  assert.equal(pathLength([{ x: 0, y: 0 }, { x: 10, y: 0 }]), 10);
+  assert.equal(pathLength([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }]), 20);
+});
+
+test('pointAlongPath devuelve el punto de la ruta a esa distancia', () => {
+  const path = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }];
+  assert.deepEqual(pointAlongPath(path, 0), { x: 0, y: 0 });
+  assert.deepEqual(pointAlongPath(path, 5), { x: 5, y: 0 });
+  assert.deepEqual(pointAlongPath(path, 10), { x: 10, y: 0 });
+  assert.deepEqual(pointAlongPath(path, 15), { x: 10, y: 5 });
+  // Más allá del final: el último punto.
+  assert.deepEqual(pointAlongPath(path, 999), { x: 10, y: 10 });
+  assert.equal(pointAlongPath([], 5), null);
+});
+
+test('pathFacing mira el primer tramo horizontal de la ruta', () => {
+  const plaza = getRoom('plaza');
+  assert.equal(pathFacing(findPath(plaza, { x: 100, y: 180 }, { x: 60, y: 180 }), 'right'), 'left');
+  assert.equal(pathFacing(findPath(plaza, { x: 100, y: 180 }, { x: 250, y: 180 }), 'left'), 'right');
+  // Una ruta vertical no cambia el sentido anterior.
+  assert.equal(pathFacing(findPath(plaza, { x: 100, y: 180 }, { x: 100, y: 120 }), 'right'), 'right');
+  // Una ruta vacía tampoco.
+  assert.equal(pathFacing([], 'left'), 'left');
+});
+
+test('exitThreshold es el punto caminable más cercano al centro de la salida', () => {
+  for (const room of Object.values(ROOMS)) {
+    for (const salida of room.exits) {
+      const umbral = exitThreshold(room, salida);
+      assert.ok(umbral, `la salida de "${room.id}" no tiene umbral`);
+      assert.equal(
+        isWalkable(room, umbral.x, umbral.y),
+        true,
+        `el umbral de "${room.id}" no es caminable`
+      );
+      // Está junto al centro de la puerta.
+      const cx = salida.x + salida.w / 2;
+      const cy = salida.y + salida.h / 2;
+      assert.ok(
+        Math.hypot(umbral.x - cx, umbral.y - cy) <= 8,
+        `el umbral de "${room.id}" está lejos de la puerta`
+      );
+    }
+  }
 });
 
 // ------------------------------------------------------------------

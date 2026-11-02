@@ -42,7 +42,7 @@ test('el laboratorio del mundo monta la plaza, traduce los clics y sigue al serv
   expect(info.scale).toBe(2);
   expect(info.exits).toBe(2);
   expect(info.players).toBe(2);
-  expect(info.me).toEqual({ x: 100, y: 180 });
+  expect(info.me).toEqual({ x: 100, y: 180, target: null, facing: 'right' });
 
   // 2. El escenario mide 320*k x 200*k px de CSS y el gato 32*k.
   const sizes = await page.evaluate(() => {

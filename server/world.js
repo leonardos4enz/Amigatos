@@ -278,6 +278,230 @@ function exitTouchesWalkable(room, exit) {
 }
 
 // ------------------------------------------------------------------
+// rutas: A* sobre una cuadrícula de celdas de 4 px
+// ------------------------------------------------------------------
+
+// Velocidad de caminata: 60 px lógicos por segundo (docs/mundo.md §3).
+const SPEED = 60;
+// Lado de la celda de la cuadrícula de caminos (px lógicos).
+const CELL = 4;
+
+// Los 8 vecinos de una celda. En diagonal no se cortan esquinas: los dos
+// vecinos ortogonales tienen que ser caminables.
+const NEIGHBORS = [
+  [1, 0], [-1, 0], [0, 1], [0, -1],
+  [1, 1], [1, -1], [-1, 1], [-1, -1],
+];
+
+// Centro de la celda (cx, cy) de la cuadrícula.
+function cellCenter(cx, cy) {
+  return { x: cx * CELL + CELL / 2, y: cy * CELL + CELL / 2 };
+}
+
+// Montículo binario mínimo: guarda los nodos por su prioridad f (el A*).
+function heapPush(heap, item) {
+  heap.push(item);
+  let i = heap.length - 1;
+  while (i > 0) {
+    const parent = (i - 1) >> 1;
+    if (heap[parent].f <= heap[i].f) break;
+    const swap = heap[parent];
+    heap[parent] = heap[i];
+    heap[i] = swap;
+    i = parent;
+  }
+}
+
+function heapPop(heap) {
+  const top = heap[0];
+  const last = heap.pop();
+  if (heap.length > 0) {
+    heap[0] = last;
+    let i = 0;
+    for (;;) {
+      const left = 2 * i + 1;
+      const right = 2 * i + 2;
+      let min = i;
+      if (left < heap.length && heap[left].f < heap[min].f) min = left;
+      if (right < heap.length && heap[right].f < heap[min].f) min = right;
+      if (min === i) break;
+      const swap = heap[min];
+      heap[min] = heap[i];
+      heap[i] = swap;
+      i = min;
+    }
+  }
+  return top;
+}
+
+// Ruta entre dos puntos del piso caminable (A* sobre la cuadrícula de celdas
+// de 4 px). Devuelve la lista de puntos de la ruta o null si no hay camino.
+//
+// La ruta va del punto exacto de salida al punto exacto de llegada: los
+// puntos intermedios son los centros de las celdas por las que pasa el gato.
+// Todos los puntos de la ruta están sobre el piso caminable.
+function findPath(room, from, to) {
+  const r = resolveRoom(room);
+  if (!r || !Array.isArray(r.walkable) || r.walkable.length === 0) return null;
+  if (!from || !to) return null;
+  if (!Number.isFinite(from.x) || !Number.isFinite(from.y)) return null;
+  if (!Number.isFinite(to.x) || !Number.isFinite(to.y)) return null;
+  // Los dos extremos tienen que estar sobre el piso caminable.
+  if (!isWalkable(r, from.x, from.y) || !isWalkable(r, to.x, to.y)) return null;
+
+  const cols = Math.max(1, Math.ceil(r.width / CELL));
+  const rows = Math.max(1, Math.ceil(r.height / CELL));
+  const cellOf = (x, y) => ({
+    cx: Math.min(Math.max(Math.floor(x / CELL), 0), cols - 1),
+    cy: Math.min(Math.max(Math.floor(y / CELL), 0), rows - 1),
+  });
+  const walkableCell = (cx, cy) => {
+    if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return false;
+    const c = cellCenter(cx, cy);
+    return isWalkable(r, c.x, c.y);
+  };
+
+  const start = cellOf(from.x, from.y);
+  const goal = cellOf(to.x, to.y);
+  if (!walkableCell(start.cx, start.cy) || !walkableCell(goal.cx, goal.cy)) return null;
+
+  // Distancia octil: el coste real de los 8 vecinos (nunca sobreestima).
+  const heuristic = (cx, cy) => {
+    const dx = Math.abs(cx - goal.cx);
+    const dy = Math.abs(cy - goal.cy);
+    return dx + dy - (2 - Math.SQRT2) * Math.min(dx, dy);
+  };
+
+  const startKey = start.cy * cols + start.cx;
+  const goalKey = goal.cy * cols + goal.cx;
+  const gScore = new Map([[startKey, 0]]);
+  const cameFrom = new Map();
+  const closed = new Set();
+  const open = [];
+  heapPush(open, { key: startKey, f: heuristic(start.cx, start.cy) });
+
+  while (open.length > 0) {
+    const current = heapPop(open);
+    if (closed.has(current.key)) continue;
+    closed.add(current.key);
+    if (current.key === goalKey) break;
+
+    const cx = current.key % cols;
+    const cy = (current.key - cx) / cols;
+    const g = gScore.get(current.key);
+
+    for (const [dx, dy] of NEIGHBORS) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (!walkableCell(nx, ny)) continue;
+      // En diagonal no se cortan esquinas: los dos vecinos ortogonales
+      // tienen que ser caminables.
+      if (dx !== 0 && dy !== 0) {
+        if (!walkableCell(cx + dx, cy) || !walkableCell(cx, cy + dy)) continue;
+      }
+      const key = ny * cols + nx;
+      if (closed.has(key)) continue;
+      const step = (dx !== 0 && dy !== 0) ? Math.SQRT2 : 1;
+      const next = g + step;
+      const previous = gScore.get(key);
+      if (previous !== undefined && previous <= next) continue;
+      gScore.set(key, next);
+      cameFrom.set(key, current.key);
+      heapPush(open, { key, f: next + heuristic(nx, ny) });
+    }
+  }
+
+  if (!gScore.has(goalKey)) return null;
+
+  // Reconstruye la ruta de celdas (del final hacia el principio).
+  const cells = [];
+  let key = goalKey;
+  while (key !== undefined) {
+    const cx = key % cols;
+    cells.push({ cx, cy: (key - cx) / cols });
+    key = cameFrom.get(key);
+  }
+  cells.reverse();
+
+  // La ruta final: del punto exacto al punto exacto, con los centros de las
+  // celdas intermedias por medio.
+  const points = [{ x: from.x, y: from.y }];
+  for (let i = 1; i < cells.length - 1; i++) {
+    points.push(cellCenter(cells[i].cx, cells[i].cy));
+  }
+  points.push({ x: to.x, y: to.y });
+
+  // Sin puntos repetidos.
+  const path = [];
+  for (const p of points) {
+    const last = path[path.length - 1];
+    if (last && last.x === p.x && last.y === p.y) continue;
+    path.push(p);
+  }
+  return path;
+}
+
+// Longitud de una ruta (en px lógicos).
+function pathLength(path) {
+  if (!Array.isArray(path) || path.length === 0) return 0;
+  let total = 0;
+  for (let i = 1; i < path.length; i++) {
+    total += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+  }
+  return total;
+}
+
+// Punto de la ruta a `distance` px del principio (interpolado). Si la distancia
+// es mayor que la ruta, devuelve el último punto.
+function pointAlongPath(path, distance) {
+  if (!Array.isArray(path) || path.length === 0) return null;
+  if (!(distance > 0)) return { x: path[0].x, y: path[0].y };
+  let rest = distance;
+  for (let i = 1; i < path.length; i++) {
+    const dx = path[i].x - path[i - 1].x;
+    const dy = path[i].y - path[i - 1].y;
+    const segment = Math.hypot(dx, dy);
+    if (rest <= segment) {
+      const t = segment === 0 ? 0 : rest / segment;
+      return { x: path[i - 1].x + dx * t, y: path[i - 1].y + dy * t };
+    }
+    rest -= segment;
+  }
+  const last = path[path.length - 1];
+  return { x: last.x, y: last.y };
+}
+
+// Sentido del gato: 'left' o 'right' según el primer tramo con movimiento
+// horizontal de la ruta. Si la ruta no dice nada (o está vacía), se conserva
+// el sentido anterior.
+function pathFacing(path, previous) {
+  if (!Array.isArray(path) || path.length < 2) return previous;
+  // El primer tramo une el punto de partida con la cuadrícula y el último con
+  // el punto exacto de llegada: los dos pueden llevar un desvío de un par de
+  // píxeles. Los tramos entre centros de celda no: el primero horizontal manda.
+  for (let i = 1; i < path.length - 2; i++) {
+    const dx = path[i + 1].x - path[i].x;
+    if (dx !== 0) return dx < 0 ? 'left' : 'right';
+  }
+  // Si no hay tramos horizontales, manda la dirección de la ruta a nivel de
+  // celda (la columna del punto de partida y la del punto de llegada).
+  const dx = Math.floor(path[path.length - 1].x / CELL) - Math.floor(path[0].x / CELL);
+  if (dx < 0) return 'left';
+  if (dx > 0) return 'right';
+  return previous;
+}
+
+// El umbral de la puerta: el punto caminable más cercano al centro de la salida.
+// Es hasta donde camina el gato antes de cruzar.
+function exitThreshold(room, exit) {
+  const r = resolveRoom(room);
+  if (!r || !exit) return null;
+  const cx = Math.round(exit.x + exit.w / 2);
+  const cy = Math.round(exit.y + exit.h / 2);
+  return nearestWalkable(r, cx, cy);
+}
+
+// ------------------------------------------------------------------
 // regla anti-bucle
 // ------------------------------------------------------------------
 
@@ -367,6 +591,7 @@ module.exports = {
   ROOMS,
   MOVE_WINDOW_MS,
   MOVE_MAX,
+  SPEED,
   isValidRoom,
   getRoom,
   isInsideRoom,
@@ -375,6 +600,11 @@ module.exports = {
   isWalkable,
   nearestWalkable,
   walkablePolygons,
+  findPath,
+  pathLength,
+  pointAlongPath,
+  pathFacing,
+  exitThreshold,
   allowMove,
   validateRooms,
 };

@@ -56,9 +56,13 @@ test('un movimiento llega a los demás gatos de la misma sala', async () => {
   await enter(b);
 
   const moved = waitFor(b.socket, 'world:moved');
-  a.socket.emit('world:move', { x: 20, y: 24 });
+  a.socket.emit('world:move', { x: 20, y: 124 });
 
-  assert.deepEqual(await moved, { id: a.user.id, x: 20, y: 24 });
+  const m = await moved;
+  assert.equal(m.id, a.user.id);
+  assert.deepEqual(m.target, { x: 20, y: 124 });
+  assert.ok(Array.isArray(m.path) && m.path.length >= 2);
+  assert.equal(m.facing, 'left');
 });
 
 test('un movimiento no llega a los gatos de otra sala', async () => {
@@ -70,7 +74,7 @@ test('un movimiento no llega a los gatos de otra sala', async () => {
   const received = [];
   c.socket.on('world:moved', (m) => received.push(m));
 
-  a.socket.emit('world:move', { x: 20, y: 24 });
+  a.socket.emit('world:move', { x: 20, y: 124 });
 
   assert.ok(await noEvent(c.socket, 'world:moved'), 'el gato del parque no recibe world:moved');
   assert.deepEqual(received, []);
@@ -87,7 +91,7 @@ test('caminar a una salida cambia de sala y avisa a los de la sala anterior', as
   await enter(b);
 
   const leftForB = waitFor(b.socket, 'world:left');
-  const stateForA = waitFor(a.socket, 'world:state');
+  const stateForA = waitFor(a.socket, 'world:state', (s) => s.room.id === 'parque', 8000);
   // La salida de la plaza hacia el parque.
   a.socket.emit('world:move', { x: 4, y: 150 });
 
