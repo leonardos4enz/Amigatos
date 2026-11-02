@@ -44,6 +44,13 @@ Los agentes **no pueden ver imágenes ni capturas**. Todo lo visual se verifica 
 - Los tests de navegador fallan si hay errores de JavaScript en la consola (`trackErrors` en `e2e/smoke.spec.js`).
 - Para probar multijugador en el navegador, abre dos contextos (`browser.newContext()`) con dos cuentas.
 
+## Diseño del mundo
+
+Todo lo que toque el mundo (salas, movimiento, puertas, mapa) sigue **[docs/mundo.md](docs/mundo.md)**:
+escala, piso caminable, caminar animado a velocidad constante, puertas visibles, mapa del pueblo y el contrato
+de `window.__amigatos`. Si un issue contradice ese documento, gana el issue; si el documento no cubre algo, sigue
+su espíritu: el mundo tiene que sentirse amplio, vivo y fácil de recorrer.
+
 ## Camino pavimentado: una sola forma de hacer cada cosa
 
 - **Minijuego nuevo:** `server/games/<id>.js` exporta `create(players)` y `applyMove(state, userId, move)`
