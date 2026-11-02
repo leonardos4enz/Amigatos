@@ -11,7 +11,7 @@
 
   var PX = window.CatBGPixels;
   var R = PX.R, P = PX.P, ellipse = PX.ellipse;
-  var hash = PX.hash, clamp = PX.clamp, layer = PX.layer, INK = PX.INK;
+  var hash = PX.hash, layer = PX.layer, INK = PX.INK;
 
   var NATIVE_W = 320;   // el café se dibuja a 320x200 lógicos (docs/mundo.md, §1)
 
@@ -23,7 +23,13 @@
   var FLOOR_Y = 110;      // debajo de esta línea está el piso caminable
   var SKIRT_Y = 99;       // el zócalo de madera ocupa los últimos píxeles de la pared
   var COUNTER_X0 = 60, COUNTER_X1 = 180, COUNTER_Y1 = 150;   // el mostrador no se pisa
-  var SMALL_CX = 56;      // mesa redonda pegada a la pared (al fondo: no pisa el suelo)
+  // La mesa pequeña del fondo es de las que no se pisan: su pie apoya en el zócalo (y=109) y
+  // ningún píxel suyo baja de la línea de suelo, porque el servidor marca el rectángulo
+  // x 0..60, y 110..200 como caminable.
+  var SMALL_CX = 56, SMALL_BASE_Y = 109, SMALL_H = 18;
+  // La mesa grande de la derecha: su tablero arranca en y=155, justo donde el servidor termina
+  // el suelo de detrás de la mesa (rectángulo x 240..320, y 110..155). Nada de ella pisa el suelo.
+  var BIG_CX = 280, BIG_BASE_Y = 199, BIG_H = 40;
 
   var CAFE_BOOKS = ['#ff8fab', '#8ecae6', '#90be6d', '#f6bd60', '#cdb8de', '#f4a261', '#b8e0d2'];
 
@@ -31,10 +37,10 @@
   var LAMPS = [56, 152, 226];
   // Tazas humeantes: x,y = esquina inferior izquierda de cada taza.
   var CUPS = [
-    { x: 44, y: 94, col: '#ffc6d6', seed: 0 },
-    { x: 62, y: 94, col: '#c9f0e1', seed: 1 },
-    { x: 254, y: 158, col: '#ffffff', seed: 2 },
-    { x: 286, y: 158, col: '#f7d9c4', seed: 3 }
+    { x: 44, y: 93, col: '#ffc6d6', seed: 0 },
+    { x: 62, y: 93, col: '#c9f0e1', seed: 1 },
+    { x: 254, y: 162, col: '#ffffff', seed: 2 },
+    { x: 286, y: 162, col: '#f7d9c4', seed: 3 }
   ];
   var YARN = { x: 100, y: 157 };
 
@@ -205,13 +211,19 @@
     }
   }
 
-  // Mesa redonda: el pie se apoya en baseY y el tablero queda a `height` de altura.
+  // Mesa redonda: el pie apoya en baseY (sin bajar de ahí, para no invadir el suelo caminable)
+  // y el tablero queda a `height` de altura.
   function roundTable(c, cx, baseY, rx, height) {
     var topY = baseY - height;
-    ellipse(c, cx, baseY + 1, rx * 0.6, 4, '#b98257');
-    R(c, '#9b6a45', cx - 3, topY + 4, 7, baseY - topY - 4);
-    R(c, '#7a4f33', cx - 2, topY + 4, 2, baseY - topY - 4);
-    ellipse(c, cx, baseY - 1, 11, 4, '#7a4f33');
+    // pie: dos elipses con contorno, apoyadas justo en baseY
+    var r1 = Math.round(rx * 0.55);
+    ellipse(c, cx, baseY - 3, r1, 3, INK);
+    ellipse(c, cx, baseY - 3, r1 - 1, 2, '#b98257');
+    ellipse(c, cx, baseY - 4, r1 - 3, 1, '#8a5a3b');
+    // columna
+    R(c, '#9b6a45', cx - 3, topY + 4, 7, baseY - topY - 7);
+    R(c, '#7a4f33', cx - 2, topY + 4, 2, baseY - topY - 7);
+    // tablero
     ellipse(c, cx, topY + 2, rx, 6, INK);
     ellipse(c, cx, topY + 1, rx - 1, 5, '#e8d6c0');
     ellipse(c, cx, topY, rx - 4, 3, '#fff8ee');
@@ -292,11 +304,11 @@
     R(c, '#fffaf5', 100, 101, 12, 9);
     R(c, '#8a5a3b', 103, 104, 6, 5);
     R(c, '#8a5a3b', 108, 105, 2, 3);
-    // la mesa pequeña del fondo y sus tazas
-    roundTable(c, SMALL_CX, 108, 20, 13);
-    // la mesa grande de la derecha
-    roundTable(c, 280, 194, 40, 36);
-    cake(c, 262, 162, 14, 14, '#ffc6d6', '#e63946');
+    // la mesa pequeña del fondo y sus tazas (al fondo: apoya en el zócalo, no pisa el suelo)
+    roundTable(c, SMALL_CX, SMALL_BASE_Y, 20, SMALL_H);
+    // la mesa grande de la derecha (su tablero empieza en y=155, el suelo de detrás no se pisa)
+    roundTable(c, BIG_CX, BIG_BASE_Y, 40, BIG_H);
+    cake(c, 268, 164, 14, 8, '#ffc6d6', '#e63946');
     for (i = 0; i < CUPS.length; i++) cafeCup(c, CUPS[i].x, CUPS[i].y, CUPS[i].col, 0, CUPS[i].seed, false);
     rug(c);
     yarnBall(c, YARN.x, YARN.y);
