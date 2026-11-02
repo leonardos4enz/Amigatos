@@ -154,6 +154,35 @@ test('addRoom no registra una sala con la geometría rota', () => {
   assert.equal(getRoom('salaRota'), null);
 });
 
+test('addRoom solo valida la sala nueva, no todo el catálogo', () => {
+  // Con una sala rota en el catálogo, registrar otra sala válida sigue
+  // funcionando: addRoom no revalida el catálogo entero.
+  ROOMS.salaRotaDelCatalogo = {
+    id: 'salaRotaDelCatalogo',
+    name: 'Sala rota del catálogo',
+    bg: 'plaza',
+    width: 320,
+    height: 200,
+    spawn: { x: 160, y: 10 }, // en el cielo: no es caminable
+    walkable: [rect(0, 110, 320, 200)],
+    exits: [],
+  };
+  try {
+    const sala = salaDePrueba([rect(0, 110, 320, 200)], { id: 'salaValida' });
+    addRoom(sala);
+    assert.equal(getRoom('salaValida'), sala);
+    removeRoom('salaValida');
+
+    // Pero el catálogo entero sí ve la sala rota.
+    assert.ok(
+      world.validateRooms().some((p) => p.includes('salaRotaDelCatalogo')),
+      'validateRooms avisa de la sala rota del catálogo'
+    );
+  } finally {
+    delete ROOMS.salaRotaDelCatalogo;
+  }
+});
+
 // ------------------------------------------------------------------
 // límites
 // ------------------------------------------------------------------

@@ -1568,7 +1568,6 @@
     sock.on('world:join', function (d) { var ui = worldUI(); if (ui) ui.applyJoin(d); });
     sock.on('world:left', function (d) { var ui = worldUI(); if (ui) ui.applyLeft(d); });
     sock.on('world:moved', function (d) { var ui = worldUI(); if (ui) ui.applyMoved(d); });
-    sock.on('world:pos', function (d) { var ui = worldUI(); if (ui) ui.applyPos(d); });
     sock.on('error:msg', function (d) {
       toast((d && d.message) || 'Algo salió mal', 'error');
       if (S.overShownFor && S.rematchMine) {

@@ -234,13 +234,9 @@ const newId = () => crypto.randomBytes(6).toString('hex');
 const world = new Map();
 // userId -> marcas de tiempo (ms) de los movimientos aceptados (ventana deslizante).
 const worldMoves = new Map();
-// userId -> { timer, interval, exit }: el gato que camina. Mientras camina, el
-// servidor publica su posición (el cliente no interpola: dibuja lo que dice el
-// servidor) y, al llegar, avisa y cruza la puerta si el destino era su umbral.
+// userId -> { timer, exit }: el gato que camina. El temporizador cruza la puerta
+// cuando el gato llega al umbral (si el destino era una salida).
 const worldWalks = new Map();
-
-// Cada cuánto (ms) se publica la posición de un gato que camina.
-const WORLD_POS_MS = 100;
 
 // Room de Socket.IO de una sala del mundo.
 const worldRoom = (roomId) => `world:${roomId}`;
@@ -278,7 +274,10 @@ function worldPosition(state, now = Date.now()) {
   return worldRules.pointAlongPath(path, travelled);
 }
 
-// Un gato del mundo tal como se lo manda al cliente.
+// Un gato del mundo tal como se lo manda al cliente (world:state, world:join
+// y world:moved): la posición actual (derivada de la ruta), el destino, el
+// sentido y la ruta que sigue. Es el único sitio donde se construye el
+// payload de un gato.
 function worldPlayer(uid) {
   const state = world.get(uid);
   const entry = online.get(uid);
@@ -293,8 +292,6 @@ function worldPlayer(uid) {
     target: state.target ? { x: state.target.x, y: state.target.y } : null,
     facing: state.facing,
     path: (state.path || []).map((p) => ({ x: p.x, y: p.y })),
-    speed: worldRules.SPEED,
-    startedAt: state.startedAt,
   };
 }
 
@@ -363,60 +360,33 @@ function stopWorldWalk(uid) {
   const walk = worldWalks.get(uid);
   if (!walk) return;
   clearTimeout(walk.timer);
-  clearInterval(walk.interval);
   worldWalks.delete(uid);
 }
 
-// Publica la posición actual de un gato: la que se deriva de su ruta.
-function publishWorldPosition(uid) {
-  const state = world.get(uid);
-  if (!state) return;
-  const position = worldPosition(state);
-  io.to(worldRoom(state.room)).emit('world:pos', {
-    id: uid,
-    x: Math.round(position.x),
-    y: Math.round(position.y),
-  });
-}
-
-// Publica que un gato ha empezado a caminar: la ruta, el destino, el sentido
-// y la posición actual (la de este instante).
+// Publica que un gato ha empezado a caminar: la ruta que sigue, el destino,
+// el sentido y la posición actual (la de este instante).
 function publishWorldMoved(uid) {
+  const player = worldPlayer(uid);
+  if (!player) return;
   const state = world.get(uid);
-  if (!state) return;
-  const position = worldPosition(state);
-  io.to(worldRoom(state.room)).emit('world:moved', {
-    id: uid,
-    x: Math.round(position.x),
-    y: Math.round(position.y),
-    path: (state.path || []).map((p) => ({ x: p.x, y: p.y })),
-    target: state.target ? { x: state.target.x, y: state.target.y } : null,
-    facing: state.facing,
-    speed: worldRules.SPEED,
-    startedAt: state.startedAt,
-  });
+  io.to(worldRoom(state.room)).emit('world:moved', player);
 }
 
-// El gato camina: el servidor publica su posición mientras avanza (el cliente
-// dibuja lo que dice el servidor, no interpola) y, cuando llega, avisa. Si el
-// destino era el umbral de una salida, al llegar cruza a la otra sala: el
-// cambio de sala se difiere hasta que termina el trayecto (pathLength / SPEED).
+// El gato camina: el servidor cronometra el trayecto (pathLength / SPEED). Si
+// el destino era el umbral de una salida, al llegar cruza a la otra sala: el
+// cambio de sala se difiere hasta que termina el trayecto.
 function startWorldWalk(uid, exit) {
   stopWorldWalk(uid);
   const state = world.get(uid);
   if (!state) return;
   const delay = (worldRules.pathLength(state.path) / worldRules.SPEED) * 1000;
   const timer = setTimeout(() => {
-    // El gato ha llegado: se publica su posición final.
-    publishWorldPosition(uid);
     stopWorldWalk(uid);
     if (exit) crossWorldExit(uid, exit);
   }, delay);
-  const interval = setInterval(() => publishWorldPosition(uid), WORLD_POS_MS);
   // Los temporizadores no tienen que tener vivo al proceso.
   if (typeof timer.unref === 'function') timer.unref();
-  if (typeof interval.unref === 'function') interval.unref();
-  worldWalks.set(uid, { timer, interval, exit });
+  worldWalks.set(uid, { timer, exit });
 }
 
 // El gato cruza a la sala de la salida: se va de la actual (los demás ven

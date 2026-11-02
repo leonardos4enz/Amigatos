@@ -201,7 +201,8 @@ fuentes y los muebles grandes quedan **fuera** de los polígonos.
 | `pathFacing(path, previous)` | El sentido del gato (`'left'`/`'right'`) según el primer tramo horizontal de la ruta; si la ruta no dice nada, se conserva el anterior. |
 | `segmentWalkable(room, a, b)` | ¿El segmento entre dos puntos pasa entero por el piso caminable? |
 | `exitThreshold(room, exit)` | El umbral de la puerta: el punto caminable más cercano al centro de la salida. |
-| `addRoom(room)` / `removeRoom(id)` | Registran y quitan una sala del catálogo (la sala tiene que pasar `validateRooms`). |
+| `addRoom(room)` / `removeRoom(id)` | Registran y quitan una sala del catálogo (la sala nueva tiene que pasar `validateRoom`; solo se valida esa sala, no todo el catálogo). |
+| `validateRoom(room, rooms)` / `validateRooms(rooms)` | Los problemas de una sala y del catálogo entero: spawns y `toSpawn` no caminables, salas sin polígonos y salidas cuya zona interior no toca el piso caminable. |
 | `SPEED` | La velocidad de caminata: **60 px lógicos por segundo**. |
 
 `validateRooms()` comprueba el catálogo: avisa de spawns y `toSpawn` no caminables, de salas sin
@@ -219,6 +220,11 @@ El servidor es el que decide por dónde camina el gato:
 - si **no hay ruta**, el gato no se mueve y se manda el error `"No se puede llegar hasta ahí."`;
 - la posición actual de cada gato **no se guarda**: se deriva de la ruta y del tiempo que lleva
   recorriéndola (`pathLength / SPEED` segundos). El servidor sigue siendo la verdad.
+
+El cliente dibuja al gato recorriendo **esa misma ruta** a la misma velocidad (`SPEED`, 60 px lógicos
+por segundo): no hay ningún evento extra para las posiciones intermedias. La posición que publica el
+cliente sale de la ruta (`pointAlongPath`) y del tiempo que lleva recorriéndola, igual que en el
+servidor.
 
 La ruta no puede cortar esquinas ni atravesar obstáculos:
 
@@ -257,8 +263,9 @@ La ruta no puede cortar esquinas ni atravesar obstáculos:
     sigue: `[{ x, y }, ...]`.
 - `world:join` `{ player }` — alguien más entró a tu sala: `{ id, username, cat, x, y, target, facing, path }`.
 - `world:left` `{ id }` — alguien salió de tu sala o se fue del mundo.
-- `world:moved` `{ id, x, y, path, target, facing }` — alguien se movió en tu sala: la ruta que sigue
-  (`path`), su destino (`target`), su sentido (`facing`) y su posición actual (`x`, `y`).
+- `world:moved` `{ id, username, cat, x, y, path, target, facing }` — alguien se movió en tu sala:
+  la ruta que sigue (`path`), su destino (`target`), su sentido (`facing`) y su posición actual (`x`, `y`).
+  Es el mismo payload de gato que mandan `world:state` y `world:join`.
 
 ### Reglas del servidor
 - El servidor decide la posición: si `x`/`y` no son finitos, error; si están fuera de la sala, error y el
@@ -328,3 +335,14 @@ actualizado con cada `world:state`, `world:join`, `world:left` y `world:moved`.
 
 `x` e `y` son siempre la **posición actual** del gato, nunca su destino: el cliente deriva la posición
 de la ruta que manda el servidor (`path` + `SPEED`), igual que hace el servidor.
+
+### Caminata del cliente
+`public/js/world.js` recorre la ruta que manda el servidor (`path`) a `SPEED` (60 px lógicos por
+segundo, el mismo valor que `server/world.js`): la posición del gato sale de la ruta y del tiempo que
+lleva recorriéndola, igual que en el servidor. Para eso el cliente copia las funciones puras del
+servidor (`pathLength`, `pointAlongPath`), igual que copia la geometría de las salas. Cuando el gato
+llega al final de la ruta se queda ahí y vuelve a la animación `idle`; mientras camina usa la animación
+`walk`.
+
+El `facing` que manda el servidor es el sentido en el que camina el gato (`'left'` o `'right'`); el
+cliente lo publica en `window.__amigatos`, pero voltear el sprite es cosa de la tarea de animación.

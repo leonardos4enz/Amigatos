@@ -127,19 +127,17 @@ function resolveRoom(room) {
 }
 
 // Registra una sala nueva en el catálogo. La sala tiene que pasar la
-// validación del catálogo (spawns caminables, salidas que tocan el piso, etc.):
-// si no pasa, no se registra. Sirve para las salas de prueba de los tests y
-// para las salas que se añadan al mundo.
+// validación (spawns caminables, salidas que tocan el piso, etc.): si no pasa,
+// no se registra. Solo se valida la sala nueva (las demás ya son válidas).
 function addRoom(room) {
   if (!room || typeof room.id !== 'string' || !room.id) {
     throw new Error('La sala necesita un id.');
   }
-  ROOMS[room.id] = room;
-  const problemas = validateRooms();
+  const problemas = validateRoom(room, ROOMS);
   if (problemas.length > 0) {
-    delete ROOMS[room.id];
     throw new Error(`Geometría del mundo inválida: ${problemas.join('; ')}`);
   }
+  ROOMS[room.id] = room;
   return room;
 }
 
@@ -694,51 +692,58 @@ function exitThreshold(room, exit) {
 // contra la salida opuesta, sin poder avanzar nunca.
 // Además, el spawn y los toSpawn tienen que estar sobre el piso caminable, cada sala
 // necesita polígonos y ninguna salida puede quedar flotando lejos del piso.
-// Devuelve la lista de violaciones (vacía si todo está bien).
-function validateRooms(rooms = ROOMS) {
+// Devuelve la lista de violaciones de UNA sala (vacía si todo está bien).
+function validateRoom(room, rooms = ROOMS) {
   const problems = [];
 
-  for (const room of Object.values(rooms)) {
-    if (!Array.isArray(room.walkable) || room.walkable.length === 0) {
-      problems.push(`la sala "${room.id}" no define polígonos caminables`);
-    }
+  if (!Array.isArray(room.walkable) || room.walkable.length === 0) {
+    problems.push(`la sala "${room.id}" no define polígonos caminables`);
+  }
 
-    // El spawn tiene que estar en el piso caminable.
-    if (!isWalkable(room, room.spawn.x, room.spawn.y)) {
-      problems.push(`el spawn de "${room.id}" no está sobre el piso caminable`);
-    }
+  // El spawn tiene que estar en el piso caminable.
+  if (!isWalkable(room, room.spawn.x, room.spawn.y)) {
+    problems.push(`el spawn de "${room.id}" no está sobre el piso caminable`);
+  }
 
-    // El spawn no puede estar sobre una salida de su propia sala.
-    for (const exit of room.exits || []) {
-      if (isInsideExit(exit, room.spawn.x, room.spawn.y)) {
-        problems.push(`spawn de "${room.id}" cae dentro de la salida hacia "${exit.to}"`);
-      }
-      // La salida tiene que tocar el piso caminable: si no, es unreachable.
-      if (!exitTouchesWalkable(room, exit)) {
-        problems.push(`la salida de "${room.id}" hacia "${exit.to}" no toca el piso caminable`);
-      }
+  // El spawn no puede estar sobre una salida de su propia sala.
+  for (const exit of room.exits || []) {
+    if (isInsideExit(exit, room.spawn.x, room.spawn.y)) {
+      problems.push(`spawn de "${room.id}" cae dentro de la salida hacia "${exit.to}"`);
     }
+    // La salida tiene que tocar el piso caminable: si no, es unreachable.
+    if (!exitTouchesWalkable(room, exit)) {
+      problems.push(`la salida de "${room.id}" hacia "${exit.to}" no toca el piso caminable`);
+    }
+  }
 
-    // El toSpawn no puede estar sobre una salida de la sala a la que se entra.
-    for (const exit of room.exits || []) {
-      const target = rooms[exit.to];
-      if (!target) {
-        problems.push(`la salida de "${room.id}" apunta a una sala inexistente: "${exit.to}"`);
-        continue;
-      }
-      if (!isWalkable(target, exit.toSpawn.x, exit.toSpawn.y)) {
-        problems.push(`toSpawn de "${room.id}"→"${exit.to}" no está sobre el piso caminable`);
-      }
-      for (const targetExit of target.exits || []) {
-        if (isInsideExit(targetExit, exit.toSpawn.x, exit.toSpawn.y)) {
-          problems.push(
-            `toSpawn de "${room.id}"→"${exit.to}" cae dentro de una salida de "${exit.to}"`
-          );
-        }
+  // El toSpawn no puede estar sobre una salida de la sala a la que se entra.
+  for (const exit of room.exits || []) {
+    const target = rooms[exit.to];
+    if (!target) {
+      problems.push(`la salida de "${room.id}" apunta a una sala inexistente: "${exit.to}"`);
+      continue;
+    }
+    if (!isWalkable(target, exit.toSpawn.x, exit.toSpawn.y)) {
+      problems.push(`toSpawn de "${room.id}"→"${exit.to}" no está sobre el piso caminable`);
+    }
+    for (const targetExit of target.exits || []) {
+      if (isInsideExit(targetExit, exit.toSpawn.x, exit.toSpawn.y)) {
+        problems.push(
+          `toSpawn de "${room.id}"→"${exit.to}" cae dentro de una salida de "${exit.to}"`
+        );
       }
     }
   }
 
+  return problems;
+}
+
+// Los problemas de TODO el catálogo (la lista de las salas, una por una).
+function validateRooms(rooms = ROOMS) {
+  const problems = [];
+  for (const room of Object.values(rooms)) {
+    problems.push(...validateRoom(room, rooms));
+  }
   return problems;
 }
 
@@ -794,5 +799,6 @@ module.exports = {
   segmentWalkable,
   exitThreshold,
   allowMove,
+  validateRoom,
   validateRooms,
 };

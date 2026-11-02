@@ -74,8 +74,26 @@ test('una persona explora el mundo, camina por la plaza y vuelve al lobby', asyn
   const destino = await page.evaluate(() => globalThis.window.__amigatos.me.target);
   expect(destino.y).toBeGreaterThanOrEqual(110);
 
-  // El gato camina hasta el destino (la posición la publica el servidor) y no
-  // aparece de golpe en él.
+  // La velocidad de la caminata: 60 px lógicos por segundo (docs/mundo.md §3).
+  // Se mide sobre la posición DIBUJADA del gato (no la lógica): el gato tiene
+  // que avanzar a esa velocidad, ni más lento ni de golpe.
+  const pintado = () => page.evaluate(() => {
+    const el = globalThis.document.querySelector('#world-stage .world-cat');
+    if (!el) return null;
+    return {
+      x: parseFloat(el.style.left) / 100 * 320,
+      y: parseFloat(el.style.top) / 100 * 200,
+    };
+  });
+  const antes = await pintado();
+  await page.waitForTimeout(300);
+  const despues = await pintado();
+  const velocidad = Math.hypot(despues.x - antes.x, despues.y - antes.y) / 0.3;
+  expect(velocidad, 'el gato debería caminar a 60 px lógicos por segundo').toBeGreaterThan(40);
+  expect(velocidad, 'el gato debería caminar a 60 px lógicos por segundo').toBeLessThan(80);
+
+  // El gato camina hasta el destino (recorriendo la ruta que manda el
+  // servidor) y no aparece de golpe en él.
   await expect.poll(async () => page.evaluate(() => {
     const me = globalThis.window.__amigatos && globalThis.window.__amigatos.me;
     if (!me || !me.target) return false;

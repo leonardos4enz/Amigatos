@@ -310,7 +310,7 @@ test('un movimiento imposible no gasta las oportunidades de movimiento', async (
   });
 });
 
-test('el servidor publica la posición del gato mientras camina', async () => {
+test('la posición del gato se deriva de la ruta que camina', async () => {
   const a = await player();
   await enter(a);
 
@@ -319,21 +319,17 @@ test('el servidor publica la posición del gato mientras camina', async () => {
   const m = await moved;
   assert.deepEqual(m.target, { x: 250, y: 180 });
 
-  // Mientras camina, el servidor publica su posición (el cliente dibuja lo
-  // que dice el servidor). En la plaza puede haber más gatos: solo miramos el
-  // nuestro.
-  const primera = await waitFor(a.socket, 'world:pos', (p) => p.id === a.user.id);
-  assert.equal(primera.id, a.user.id);
-  assert.ok(primera.x > 100, `la posición no avanza: ${JSON.stringify(primera)}`);
-
-  // Y al final llega al destino.
-  const llegada = await waitFor(
-    a.socket,
-    'world:pos',
-    (p) => p.id === a.user.id && p.x === 250 && p.y === 180,
-    8000
-  );
-  assert.deepEqual({ x: llegada.x, y: llegada.y }, { x: 250, y: 180 });
+  // La posición NO se guarda: se deriva de la ruta y del tiempo que lleva
+  // recorriéndola. Otro gato que entra a la sala ve esa posición actual: ni el
+  // spawn (100, 180) ni el destino (250, 180).
+  const b = await player();
+  const state = await enter(b);
+  const catA = state.players.find((pl) => pl.id === a.user.id);
+  assert.ok(catA, 'A aparece en la lista de gatos');
+  assert.deepEqual(catA.path, m.path, 'el gato sigue la ruta que calculó el servidor');
+  assert.ok(catA.x >= 100 && catA.x <= 250, `posición actual rara: ${catA.x}`);
+  assert.ok(catA.x < 250, `el gato todavía no ha llegado: ${catA.x}`);
+  assert.deepEqual(catA.target, { x: 250, y: 180 });
 });
 
 // ------------------------------------------------------------------
