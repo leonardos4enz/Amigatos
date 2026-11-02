@@ -1,0 +1,41 @@
+/* Amigatos — escala del mundo (docs/mundo.md §1)
+ *
+ * Cada sala tiene una resolución lógica de 320×200 (16:10). El motor del mundo
+ * (public/js/world.js) calcula una escala ENTERA k = clamp(floor(ancho disponible / 320), 1, 3)
+ * y la publica en la variable `--world-scale` del escenario. Con ella:
+ *
+ *   - el escenario mide exactamente 320*k × 200*k px de CSS;
+ *   - el gato (32×32 lógicos) se ve a 32*k px.
+ *
+ * Sin escala fraccionaria y sin desenfoques: el pixel art se ve nítido.
+ */
+
+.world-stage {
+  --world-scale: 1;
+  position: relative;
+  width: calc(320px * var(--world-scale));
+  height: calc(200px * var(--world-scale));
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--sky, #bfe3f5);
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+
+/* nada de desenfoques dentro del escenario: solo píxeles enteros */
+.world-stage,
+.world-stage canvas,
+.world-stage img {
+  image-rendering: pixelated;
+  filter: none;
+}
+
+.world-stage canvas {
+  display: block;
+}
+
+/* el gato: 32×32 lógicos a la escala del escenario */
+.world-cat-canvas {
+  width: calc(32px * var(--world-scale));
+  height: calc(32px * var(--world-scale));
+}
