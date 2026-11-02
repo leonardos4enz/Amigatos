@@ -20,7 +20,10 @@
   var CAT_LOGICAL = 32;   // el gato: 32 px lógicos de alto (~15 % del alto de la sala)
   var MIN_SCALE = 1;      // nunca menos de 1 (320 px de CSS)
   var MAX_SCALE = 3;      // nunca más de 3 (960 px de CSS)
-  var WALK_MS = 260;      // duración de la caminata entre dos posiciones
+  // Velocidad de caminata: 60 px lógicos por segundo (docs/mundo.md §3). Es la
+  // misma que usa el servidor (SPEED en server/world.js): el gato se dibuja
+  // avanzando por la ruta que manda el servidor, a la misma velocidad.
+  var WALK_SPEED = 60;
 
   var DEFAULT_ROOM = {
     id: 'plaza',
@@ -77,6 +80,78 @@
     return out;
   }
 
+  // Copia de una lista de puntos: [{x, y}, ...]
+  function copyPoints(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i] || {};
+      out.push({ x: num(p.x, 0), y: num(p.y, 0) });
+    }
+    return out;
+  }
+
+  // Longitud de una ruta (px lógicos).
+  function pathLength(path) {
+    if (!Array.isArray(path) || path.length === 0) return 0;
+    var total = 0;
+    for (var i = 1; i < path.length; i++) {
+      total += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+    }
+    return total;
+  }
+
+  // El punto de la ruta a `distance` px del principio (interpolado). Si la
+  // distancia es mayor que la ruta, devuelve el último punto.
+  function pointAlongPath(path, distance) {
+    if (!Array.isArray(path) || path.length === 0) return null;
+    if (!(distance > 0)) return { x: path[0].x, y: path[0].y };
+    var rest = distance;
+    for (var i = 1; i < path.length; i++) {
+      var dx = path[i].x - path[i - 1].x;
+      var dy = path[i].y - path[i - 1].y;
+      var segment = Math.hypot(dx, dy);
+      if (rest <= segment) {
+        var t = segment === 0 ? 0 : rest / segment;
+        return { x: path[i - 1].x + dx * t, y: path[i - 1].y + dy * t };
+      }
+      rest -= segment;
+    }
+    var last = path[path.length - 1];
+    return { x: last.x, y: last.y };
+  }
+
+  // La distancia (px desde el principio de la ruta) del punto de la ruta más
+  // cercano a (x, y). Sirve para saber por dónde va el gato cuando el
+  // servidor manda una ruta con la posición actual.
+  function distanceAlongPath(path, x, y) {
+    if (!Array.isArray(path) || path.length === 0) return 0;
+    var acc = 0;
+    var best = 0;
+    var bestD2 = Infinity;
+    for (var i = 1; i < path.length; i++) {
+      var a = path[i - 1];
+      var b = path[i];
+      var dx = b.x - a.x;
+      var dy = b.y - a.y;
+      var len = Math.hypot(dx, dy);
+      var t = 0;
+      if (len > 0) {
+        t = ((x - a.x) * dx + (y - a.y) * dy) / (len * len);
+        t = Math.min(Math.max(t, 0), 1);
+      }
+      var px = a.x + dx * t;
+      var py = a.y + dy * t;
+      var d2 = (px - x) * (px - x) + (py - y) * (py - y);
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = acc + len * t;
+      }
+      acc += len;
+    }
+    return best;
+  }
+
   function copyRoom(r) {
     return {
       id: r.id,
@@ -124,6 +199,9 @@
       cat: rec.cat,
       x: rec.x,
       y: rec.y,
+      target: rec.target,
+      facing: rec.facing,
+      path: rec.path,
       isMe: rec.isMe
     };
   }
@@ -201,8 +279,8 @@
         rec.username = d.username;
         rec.cat = d.cat;
         rec.isMe = d.isMe;
-        rec.x = d.x;
-        rec.y = d.y;
+        rec.target = d.target || null;
+        rec.facing = d.facing || rec.facing;
         next.push(rec);
         if (rec.el) {
           // el gato propio se dibuja aparte de los demás
@@ -211,6 +289,8 @@
           if (rec.label) rec.label.textContent = rec.username;
           if (rec.ctrl && rec.cat) rec.ctrl.setCat(rec.cat);
         }
+        // La ruta que manda el servidor: el gato camina por ella.
+        setWalk(rec, d.path, d.x, d.y);
       } else {
         rec = {
           id: d.id,
@@ -218,6 +298,9 @@
           cat: d.cat,
           x: d.x,
           y: d.y,
+          target: d.target || null,
+          facing: d.facing || 'right',
+          path: d.path || null,
           isMe: d.isMe,
           el: null,
           ctrl: null,
@@ -225,11 +308,12 @@
           canvas: null,
           rx: d.x,
           ry: d.y,
-          anim: null
+          walk: null
         };
         byId[key] = rec;
         next.push(rec);
         createCatEl(rec);
+        setWalk(rec, d.path, d.x, d.y);
       }
     }
 
@@ -245,12 +329,6 @@
     model.me = null;
     for (var j = 0; j < next.length; j++) {
       if (next[j].isMe) model.me = next[j];
-    }
-
-    // los que cambiaron de sitio caminan hasta allí
-    for (var k = 0; k < next.length; k++) {
-      var r = next[k];
-      if (r.el && (r.rx !== r.x || r.ry !== r.y)) animateTo(r, r.x, r.y);
     }
   }
 
@@ -303,7 +381,7 @@
     rec.el = null;
     rec.label = null;
     rec.canvas = null;
-    rec.anim = null;
+    rec.walk = null;
   }
 
   // Coloca el gato en su posición lógica (en % del tamaño de la sala).
@@ -317,12 +395,51 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* Animación (interpolación + caminata)                                */
+  /* Animación (la caminata)                                             */
   /* ------------------------------------------------------------------ */
 
-  function animateTo(rec, tx, ty) {
-    if (rec.anim && rec.anim.toX === tx && rec.anim.toY === ty) return;
-    rec.anim = { fromX: rec.rx, fromY: rec.ry, toX: tx, toY: ty, t0: now(), dur: WALK_MS };
+  // Prepara la caminata de un gato: la ruta que manda el servidor y el punto
+  // de la ruta en el que está ahora. El gato avanza por la ruta a WALK_SPEED
+  // (la misma velocidad que el servidor), así que la posición se deriva de la
+  // ruta igual que en el servidor (docs/mundo.md §3).
+  function setWalk(rec, path, x, y) {
+    var ruta = copyPoints(path);
+    rec.path = ruta.length ? ruta : null;
+    rec.x = num(x, rec.x);
+    rec.y = num(y, rec.y);
+
+    // Sin ruta no hay caminata: el gato se queda donde está.
+    if (ruta.length < 2) {
+      rec.walk = null;
+      rec.rx = rec.x;
+      rec.ry = rec.y;
+      place(rec);
+      if (rec.ctrl) rec.ctrl.play('idle');
+      return;
+    }
+
+    var total = pathLength(ruta);
+    var dist = distanceAlongPath(ruta, rec.x, rec.y);
+
+    // Ya está en el final de la ruta: no camina.
+    if (dist >= total - 0.001) {
+      var last = ruta[ruta.length - 1];
+      rec.walk = null;
+      rec.x = last.x;
+      rec.y = last.y;
+      rec.rx = last.x;
+      rec.ry = last.y;
+      place(rec);
+      if (rec.ctrl) rec.ctrl.play('idle');
+      return;
+    }
+
+    // El ancla es el punto de la ruta donde está el gato ahora.
+    var ancla = pointAlongPath(ruta, dist);
+    rec.walk = { path: ruta, dist: dist, t0: now() };
+    rec.rx = ancla.x;
+    rec.ry = ancla.y;
+    place(rec);
     if (rec.ctrl) rec.ctrl.play('walk');
     kick();
   }
@@ -334,24 +451,32 @@
   function loop(ts) {
     rafId = null;
     var more = false;
+    var moved = false;
     Object.keys(byId).forEach(function (key) {
       var rec = byId[key];
-      var a = rec.anim;
-      if (!a) return;
-      var p = Math.min(1, (ts - a.t0) / a.dur);
-      var e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-      rec.rx = a.fromX + (a.toX - a.fromX) * e;
-      rec.ry = a.fromY + (a.toY - a.fromY) * e;
-      place(rec);
-      if (p >= 1) {
-        rec.rx = a.toX;
-        rec.ry = a.toY;
-        rec.anim = null;
+      var w = rec.walk;
+      if (!w) return;
+      var dist = w.dist + ((ts - w.t0) / 1000) * WALK_SPEED;
+      var total = pathLength(w.path);
+      var p;
+      if (dist >= total) {
+        // El gato ha llegado: se queda en el final de la ruta.
+        var last = w.path[w.path.length - 1];
+        p = { x: last.x, y: last.y };
+        rec.walk = null;
         if (rec.ctrl) rec.ctrl.play('idle');
       } else {
+        p = pointAlongPath(w.path, dist);
         more = true;
       }
+      rec.x = p.x;
+      rec.y = p.y;
+      rec.rx = p.x;
+      rec.ry = p.y;
+      moved = true;
+      place(rec);
     });
+    if (moved) publish();
     if (more) rafId = requestAnimationFrame(loop);
   }
 
@@ -502,6 +627,9 @@
         cat: (p.cat && typeof p.cat === 'object') ? p.cat : null,
         x: num(p.x, 0),
         y: num(p.y, 0),
+        target: (p.target && typeof p.target === 'object') ? { x: num(p.target.x, 0), y: num(p.target.y, 0) } : null,
+        facing: p.facing === 'left' || p.facing === 'right' ? p.facing : 'right',
+        path: copyPoints(p.path),
         isMe: meId !== null && String(p.id) === meId
       });
     }
@@ -520,6 +648,11 @@
       if (m.cat && typeof m.cat === 'object') meRec.cat = m.cat;
       meRec.x = num(m.x, meRec.x);
       meRec.y = num(m.y, meRec.y);
+      if (m.target && typeof m.target === 'object') {
+        meRec.target = { x: num(m.target.x, meRec.x), y: num(m.target.y, meRec.y) };
+      }
+      if (m.facing === 'left' || m.facing === 'right') meRec.facing = m.facing;
+      meRec.path = copyPoints(m.path);
       meRec.isMe = true;
       if (idx < 0) list.push(meRec);
     }
@@ -545,6 +678,11 @@
     if (p.cat && typeof p.cat === 'object') d.cat = p.cat;
     d.x = num(p.x, d.x);
     d.y = num(p.y, d.y);
+    if (p.target && typeof p.target === 'object') {
+      d.target = { x: num(p.target.x, d.x), y: num(p.target.y, d.y) };
+    }
+    if (p.facing === 'left' || p.facing === 'right') d.facing = p.facing;
+    d.path = copyPoints(p.path);
     d.isMe = isMe;
     if (!existing) list.push(d);
 
@@ -568,9 +706,13 @@
     if (!payload || payload.id == null) return;
     var rec = byId[String(payload.id)];
     if (!rec) return;
-    rec.x = num(payload.x, rec.x);
-    rec.y = num(payload.y, rec.y);
-    animateTo(rec, rec.x, rec.y);
+    if (payload.target && typeof payload.target === 'object') {
+      rec.target = { x: num(payload.target.x, rec.x), y: num(payload.target.y, rec.y) };
+    }
+    if (payload.facing === 'left' || payload.facing === 'right') rec.facing = payload.facing;
+    // El servidor manda la ruta que sigue el gato: el cliente la recorre a la
+    // misma velocidad que el servidor (60 px lógicos por segundo).
+    setWalk(rec, payload.path, payload.x, payload.y);
     publish();
   }
 
@@ -579,10 +721,16 @@
       room: copyRoom(model.room),
       scale: scale,
       players: model.all.map(function (rec) {
-        return { id: rec.id, username: rec.username, cat: rec.cat, x: rec.x, y: rec.y };
+        return {
+          id: rec.id, username: rec.username, cat: rec.cat, x: rec.x, y: rec.y,
+          target: rec.target, facing: rec.facing
+        };
       }),
       me: model.me
-        ? { id: model.me.id, username: model.me.username, cat: model.me.cat, x: model.me.x, y: model.me.y }
+        ? {
+          id: model.me.id, username: model.me.username, cat: model.me.cat,
+          x: model.me.x, y: model.me.y, target: model.me.target, facing: model.me.facing
+        }
         : null
     };
   }
@@ -601,9 +749,12 @@
       exits: r.exits.map(function (e) {
         return { x: e.x, y: e.y, w: e.w, h: e.h, to: e.to, label: e.label };
       }),
-      me: model.me ? { x: model.me.x, y: model.me.y } : null,
+      me: model.me ? { x: model.me.x, y: model.me.y, target: model.me.target, facing: model.me.facing } : null,
       players: model.all.map(function (rec) {
-        return { id: rec.id, username: rec.username, x: rec.x, y: rec.y };
+        return {
+          id: rec.id, username: rec.username, x: rec.x, y: rec.y,
+          target: rec.target, facing: rec.facing
+        };
       }),
       scale: scale,
       mapOpen: false,

@@ -126,6 +126,26 @@ function resolveRoom(room) {
   return room;
 }
 
+// Registra una sala nueva en el catálogo. La sala tiene que pasar la
+// validación (spawns caminables, salidas que tocan el piso, etc.): si no pasa,
+// no se registra. Solo se valida la sala nueva (las demás ya son válidas).
+function addRoom(room) {
+  if (!room || typeof room.id !== 'string' || !room.id) {
+    throw new Error('La sala necesita un id.');
+  }
+  const problemas = validateRoom(room, ROOMS);
+  if (problemas.length > 0) {
+    throw new Error(`Geometría del mundo inválida: ${problemas.join('; ')}`);
+  }
+  ROOMS[room.id] = room;
+  return room;
+}
+
+// Quita una sala del catálogo (para las salas de prueba de los tests).
+function removeRoom(id) {
+  return delete ROOMS[id];
+}
+
 // ¿El punto está dentro del rectángulo de la sala (bordes incluidos)?
 function isInsideRoom(room, x, y) {
   if (!room) return false;
@@ -166,6 +186,42 @@ function walkablePolygons(room) {
   const r = resolveRoom(room);
   if (!r || !Array.isArray(r.walkable)) return [];
   return r.walkable.map((poly) => poly.map((p) => ({ x: p.x, y: p.y })));
+}
+
+// ------------------------------------------------------------------
+// caché de geometría por sala
+// ------------------------------------------------------------------
+
+// La geometría de una sala no cambia mientras la sala exista, así que se
+// cachean por sala: los polígonos con sus cajas envolventes, los puntos enteros
+// caminables, la rejilla de celdas y los enlaces entre celdas.
+const caches = new WeakMap();
+
+function cacheOf(room) {
+  let cache = caches.get(room);
+  if (cache) return cache;
+  const polys = [];
+  for (const poly of room.walkable || []) {
+    polys.push({ poly, bounds: boundsOf(poly) });
+  }
+  cache = { polys, links: new Map() };
+  caches.set(room, cache);
+  return cache;
+}
+
+// Rejilla de los puntos enteros caminables de la sala (para nearestWalkable).
+function bitmapOf(room) {
+  const cache = cacheOf(room);
+  if (cache.bitmap) return cache.bitmap;
+  const w = room.width + 1;
+  const bitmap = new Uint8Array(w * (room.height + 1));
+  for (let y = 0; y <= room.height; y++) {
+    for (let x = 0; x <= room.width; x++) {
+      if (isWalkable(room, x, y)) bitmap[y * w + x] = 1;
+    }
+  }
+  cache.bitmap = bitmap;
+  return bitmap;
 }
 
 // Caja envolvente de un polígono (con el borde incluido).
@@ -213,11 +269,13 @@ function isWalkable(room, x, y) {
   const r = resolveRoom(room);
   if (!r || !Array.isArray(r.walkable)) return false;
   if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
-  return r.walkable.some((poly) => {
-    const b = boundsOf(poly);
-    if (x < b.minX || x > b.maxX || y < b.minY || y > b.maxY) return false;
-    return isInsidePolygon(poly, x, y);
-  });
+  const cache = cacheOf(r);
+  for (const item of cache.polys) {
+    const b = item.bounds;
+    if (x < b.minX || x > b.maxX || y < b.minY || y > b.maxY) continue;
+    if (isInsidePolygon(item.poly, x, y)) return true;
+  }
+  return false;
 }
 
 // Punto caminable más cercano al punto dado (búsqueda sobre la retícula entera
@@ -229,22 +287,18 @@ function nearestWalkable(room, x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   if (isWalkable(r, x, y)) return { x, y };
 
-  // Cajas envolventes de los polígonos: solo se miran los puntos que caen en alguna.
-  const cajas = r.walkable.map(boundsOf);
+  const bitmap = bitmapOf(r);
+  const w = r.width + 1;
 
   let best = null;
   let bestD2 = Infinity;
   for (let py = 0; py <= r.height; py++) {
     for (let px = 0; px <= r.width; px++) {
+      if (!bitmap[py * w + px]) continue;
       const dx = px - x;
       const dy = py - y;
       const d2 = dx * dx + dy * dy;
       if (d2 >= bestD2) continue;
-      const enAlgunaCaja = cajas.some(
-        (b) => px >= b.minX && px <= b.maxX && py >= b.minY && py <= b.maxY
-      );
-      if (!enAlgunaCaja) continue;
-      if (!isWalkable(r, px, py)) continue;
       bestD2 = d2;
       best = { x: px, y: py };
     }
@@ -278,6 +332,358 @@ function exitTouchesWalkable(room, exit) {
 }
 
 // ------------------------------------------------------------------
+// rutas: A* sobre una cuadrícula de celdas de 4 px
+// ------------------------------------------------------------------
+
+// Velocidad de caminata: 60 px lógicos por segundo (docs/mundo.md §3).
+const SPEED = 60;
+// Lado de la celda de la cuadrícula de caminos (px lógicos).
+const CELL = 4;
+// Radio máximo (en celdas) para buscar el centro de celda más cercano al que
+// se pueda llegar en línea recta desde un punto del piso.
+const MAX_LINK_RADIUS = 8;
+
+// Los 8 vecinos de una celda. En diagonal no se cortan esquinas: los dos
+// vecinos ortogonales tienen que ser caminables.
+const NEIGHBORS = [
+  [1, 0], [-1, 0], [0, 1], [0, -1],
+  [1, 1], [1, -1], [-1, 1], [-1, -1],
+];
+
+// Centro de la celda (cx, cy) de la cuadrícula.
+function cellCenter(cx, cy) {
+  return { x: cx * CELL + CELL / 2, y: cy * CELL + CELL / 2 };
+}
+
+// ¿El segmento entre dos puntos pasa entero por el piso caminable?
+// Se mira a saltos de medio píxel, así que tampoco se escapa un hueco estrecho.
+function segmentWalkable(room, a, b) {
+  const r = resolveRoom(room);
+  if (!r || !a || !b) return false;
+  if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) return false;
+  if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) return false;
+  const largo = Math.hypot(b.x - a.x, b.y - a.y);
+  if (largo === 0) return isWalkable(r, a.x, a.y);
+  const pasos = Math.ceil(largo * 2);
+  for (let i = 0; i <= pasos; i++) {
+    const t = i / pasos;
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t;
+    if (!isWalkable(r, x, y)) return false;
+  }
+  return true;
+}
+
+// Rejilla de celdas de una sala: una celda sirve si la celda ENTERA es
+// caminable (se miran todos sus puntos, no solo el centro): así un obstáculo
+// estrecho, de menos de 4 px, no se esconde detrás del centro de la celda.
+// Se cachea porque la geometría de una sala no cambia.
+const grids = new WeakMap();
+
+function gridOf(room) {
+  let grid = grids.get(room);
+  if (grid) return grid;
+  const cols = Math.max(1, Math.ceil(room.width / CELL));
+  const rows = Math.max(1, Math.ceil(room.height / CELL));
+  const passable = new Uint8Array(cols * rows);
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      if (cellWalkable(room, cx, cy)) passable[cy * cols + cx] = 1;
+    }
+  }
+  grid = { cols, rows, passable };
+  grids.set(room, grid);
+  return grid;
+}
+
+// ¿La celda (cx, cy) es caminable entera? Se comprueban todos sus puntos
+// enteros: un hueco de un solo píxel hace que la celda no sirva.
+function cellWalkable(room, cx, cy) {
+  const x0 = cx * CELL;
+  const y0 = cy * CELL;
+  for (let y = y0; y < y0 + CELL; y++) {
+    for (let x = x0; x < x0 + CELL; x++) {
+      if (!isWalkable(room, x, y)) return false;
+    }
+  }
+  return true;
+}
+
+// Los vecinos de una celda a los que se puede pasar en línea recta por el piso.
+// En diagonal no se cortan esquinas: los dos vecinos ortogonales tienen que
+// ser caminables. Cada enlace se comprueba contra el piso (segmentWalkable),
+// así que la ruta nunca atraviesa un obstáculo, por estrecho que sea.
+function linksOf(room, grid, cx, cy) {
+  const cache = cacheOf(room);
+  const key = cy * grid.cols + cx;
+  let links = cache.links.get(key);
+  if (links) return links;
+  links = [];
+  const cols = grid.cols;
+  for (const [dx, dy] of NEIGHBORS) {
+    const nx = cx + dx;
+    const ny = cy + dy;
+    if (nx < 0 || ny < 0 || nx >= grid.cols || ny >= grid.rows) continue;
+    if (!grid.passable[ny * cols + nx]) continue;
+    if (dx !== 0 && dy !== 0) {
+      if (!grid.passable[cy * cols + (cx + dx)]) continue;
+      if (!grid.passable[(cy + dy) * cols + cx]) continue;
+    }
+    if (!segmentWalkable(room, cellCenter(cx, cy), cellCenter(nx, ny))) continue;
+    links.push({ cx: nx, cy: ny, step: (dx !== 0 && dy !== 0) ? Math.SQRT2 : 1 });
+  }
+  cache.links.set(key, links);
+  return links;
+}
+
+// El centro de celda más cercano al punto (x, y) al que se pueda llegar en
+// línea recta: el segmento entre el punto y el centro tiene que ser caminable.
+// Un punto del piso puede caer en una celda cuyo centro NO es caminable (por
+// ejemplo, en el borde de los adoquines que da a la fuente), así que el centro
+// se busca en las celdas de alrededor.
+function nearestLinkableCell(room, grid, x, y) {
+  const cols = grid.cols;
+  const rows = grid.rows;
+  const cx0 = Math.min(Math.max(Math.floor(x / CELL), 0), cols - 1);
+  const cy0 = Math.min(Math.max(Math.floor(y / CELL), 0), rows - 1);
+  for (let radio = 0; radio <= MAX_LINK_RADIUS; radio++) {
+    const candidatos = [];
+    for (let cy = cy0 - radio; cy <= cy0 + radio; cy++) {
+      for (let cx = cx0 - radio; cx <= cx0 + radio; cx++) {
+        if (radio > 0 && Math.abs(cx - cx0) !== radio && Math.abs(cy - cy0) !== radio) continue;
+        if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+        if (!grid.passable[cy * cols + cx]) continue;
+        const c = cellCenter(cx, cy);
+        candidatos.push({ cx, cy, d: Math.hypot(c.x - x, c.y - y) });
+      }
+    }
+    candidatos.sort((p, q) => p.d - q.d);
+    for (const cand of candidatos) {
+      const c = cellCenter(cand.cx, cand.cy);
+      if (segmentWalkable(room, { x, y }, c)) return { cx: cand.cx, cy: cand.cy };
+    }
+  }
+  return null;
+}
+
+// Montículo binario mínimo: guarda los nodos por su prioridad f (el A*).
+function heapPush(heap, item) {
+  heap.push(item);
+  let i = heap.length - 1;
+  while (i > 0) {
+    const parent = (i - 1) >> 1;
+    if (heap[parent].f <= heap[i].f) break;
+    const swap = heap[parent];
+    heap[parent] = heap[i];
+    heap[i] = swap;
+    i = parent;
+  }
+}
+
+function heapPop(heap) {
+  const top = heap[0];
+  const last = heap.pop();
+  if (heap.length > 0) {
+    heap[0] = last;
+    let i = 0;
+    for (;;) {
+      const left = 2 * i + 1;
+      const right = 2 * i + 2;
+      let min = i;
+      if (left < heap.length && heap[left].f < heap[min].f) min = left;
+      if (right < heap.length && heap[right].f < heap[min].f) min = right;
+      if (min === i) break;
+      const swap = heap[min];
+      heap[min] = heap[i];
+      heap[i] = swap;
+      i = min;
+    }
+  }
+  return top;
+}
+
+// A* sobre la rejilla de celdas: devuelve las celdas de la ruta (de la
+// partida a la meta) o null si no hay camino. Solo se usan los enlaces que
+// están comprobados contra el piso (linksOf), así que la ruta que sale de
+// aquí nunca atraviesa un obstáculo.
+function aStar(room, grid, start, goal) {
+  const cols = grid.cols;
+
+  // Distancia octil: el coste real de los 8 vecinos (nunca sobreestima).
+  const heuristic = (cx, cy) => {
+    const dx = Math.abs(cx - goal.cx);
+    const dy = Math.abs(cy - goal.cy);
+    return dx + dy - (2 - Math.SQRT2) * Math.min(dx, dy);
+  };
+
+  const startKey = start.cy * cols + start.cx;
+  const goalKey = goal.cy * cols + goal.cx;
+  const gScore = new Map([[startKey, 0]]);
+  const cameFrom = new Map();
+  const closed = new Set();
+  const open = [];
+  heapPush(open, { key: startKey, f: heuristic(start.cx, start.cy) });
+
+  while (open.length > 0) {
+    const current = heapPop(open);
+    if (closed.has(current.key)) continue;
+    closed.add(current.key);
+    if (current.key === goalKey) break;
+
+    const cx = current.key % cols;
+    const cy = (current.key - cx) / cols;
+    const g = gScore.get(current.key);
+
+    for (const link of linksOf(room, grid, cx, cy)) {
+      const key = link.cy * cols + link.cx;
+      if (closed.has(key)) continue;
+      const next = g + link.step;
+      const previous = gScore.get(key);
+      if (previous !== undefined && previous <= next) continue;
+      gScore.set(key, next);
+      cameFrom.set(key, current.key);
+      heapPush(open, { key, f: next + heuristic(link.cx, link.cy) });
+    }
+  }
+
+  if (!gScore.has(goalKey)) return null;
+
+  // Reconstruye la ruta de celdas (del final hacia el principio).
+  const cells = [];
+  let key = goalKey;
+  while (key !== undefined) {
+    const cx = key % cols;
+    cells.push({ cx, cy: (key - cx) / cols });
+    key = cameFrom.get(key);
+  }
+  cells.reverse();
+  return cells;
+}
+
+// Ruta entre dos puntos del piso caminable (A* sobre la cuadrícula de celdas
+// de 4 px). Devuelve la lista de puntos de la ruta o null si no hay camino.
+//
+// La ruta va del punto exacto de salida al punto exacto de llegada: entre
+// ellos están los centros de las celdas por las que pasa el gato. Todos los
+// puntos de la ruta están sobre el piso caminable y TODOS los tramos se
+// comprueban contra el piso: la ruta no corta ninguna esquina ni atraviesa un
+// obstáculo, por estrecho que sea.
+function findPath(room, from, to) {
+  const r = resolveRoom(room);
+  if (!r || !Array.isArray(r.walkable) || r.walkable.length === 0) return null;
+  if (!from || !to) return null;
+  if (!Number.isFinite(from.x) || !Number.isFinite(from.y)) return null;
+  if (!Number.isFinite(to.x) || !Number.isFinite(to.y)) return null;
+  // Los dos extremos tienen que estar sobre el piso caminable.
+  if (!isWalkable(r, from.x, from.y) || !isWalkable(r, to.x, to.y)) return null;
+
+  const grid = gridOf(r);
+  // Los extremos se enlazan con el centro de celda más cercano al que se pueda
+  // llegar en línea recta por el piso.
+  const start = nearestLinkableCell(r, grid, from.x, from.y);
+  const goal = nearestLinkableCell(r, grid, to.x, to.y);
+  if (!start || !goal) return null;
+
+  const cells = aStar(r, grid, start, goal);
+  if (!cells) return null;
+
+  const puntos = [];
+  if (cells.length === 1 && segmentWalkable(r, from, to)) {
+    // El gato ya está en la celda de destino: se va en línea recta.
+    puntos.push({ x: from.x, y: from.y }, { x: to.x, y: to.y });
+  } else {
+    puntos.push({ x: from.x, y: from.y });
+    for (const celda of cells) puntos.push(cellCenter(celda.cx, celda.cy));
+    puntos.push({ x: to.x, y: to.y });
+  }
+
+  // Sin puntos repetidos.
+  const path = [];
+  for (const p of puntos) {
+    const last = path[path.length - 1];
+    if (last && last.x === p.x && last.y === p.y) continue;
+    path.push(p);
+  }
+
+  // Comprobación final: cada tramo de la ruta (los enlaces con los centros de
+  // las celdas y los dos extremos) tiene que pasar entero por el piso. Si
+  // alguno se sale, no hay ruta: el gato no se mueve.
+  if (!pathIsWalkable(r, path)) return null;
+
+  return path;
+}
+
+// ¿Todos los tramos de la ruta pasan por el piso caminable?
+function pathIsWalkable(room, path) {
+  const r = resolveRoom(room);
+  if (!r || !Array.isArray(path) || path.length === 0) return false;
+  for (let i = 1; i < path.length; i++) {
+    if (!segmentWalkable(r, path[i - 1], path[i])) return false;
+  }
+  return true;
+}
+
+// Longitud de una ruta (en px lógicos).
+function pathLength(path) {
+  if (!Array.isArray(path) || path.length === 0) return 0;
+  let total = 0;
+  for (let i = 1; i < path.length; i++) {
+    total += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+  }
+  return total;
+}
+
+// Punto de la ruta a `distance` px del principio (interpolado). Si la distancia
+// es mayor que la ruta, devuelve el último punto.
+function pointAlongPath(path, distance) {
+  if (!Array.isArray(path) || path.length === 0) return null;
+  if (!(distance > 0)) return { x: path[0].x, y: path[0].y };
+  let rest = distance;
+  for (let i = 1; i < path.length; i++) {
+    const dx = path[i].x - path[i - 1].x;
+    const dy = path[i].y - path[i - 1].y;
+    const segment = Math.hypot(dx, dy);
+    if (rest <= segment) {
+      const t = segment === 0 ? 0 : rest / segment;
+      return { x: path[i - 1].x + dx * t, y: path[i - 1].y + dy * t };
+    }
+    rest -= segment;
+  }
+  const last = path[path.length - 1];
+  return { x: last.x, y: last.y };
+}
+
+// Sentido del gato: 'left' o 'right' según el primer tramo con movimiento
+// horizontal de la ruta. Si la ruta no dice nada (o está vacía), se conserva
+// el sentido anterior.
+function pathFacing(path, previous) {
+  if (!Array.isArray(path) || path.length < 2) return previous;
+  // Los tramos que unen el punto exacto con el centro de la celda son desvíos
+  // de un par de píxeles (nunca llegan a 3). Los tramos entre centros de celda
+  // valen 4 px: el primero de ellos que va a horizontal manda.
+  for (let i = 0; i < path.length - 1; i++) {
+    const dx = path[i + 1].x - path[i].x;
+    if (Math.abs(dx) >= 3) return dx < 0 ? 'left' : 'right';
+  }
+  // Ruta vertical (o sin tramos horizontales): manda el sentido del recorrido
+  // completo; si tampoco dice nada, se conserva el anterior.
+  const dx = path[path.length - 1].x - path[0].x;
+  if (dx < 0) return 'left';
+  if (dx > 0) return 'right';
+  return previous;
+}
+
+// El umbral de la puerta: el punto caminable más cercano al centro de la salida.
+// Es hasta donde camina el gato antes de cruzar.
+function exitThreshold(room, exit) {
+  const r = resolveRoom(room);
+  if (!r || !exit) return null;
+  const cx = Math.round(exit.x + exit.w / 2);
+  const cy = Math.round(exit.y + exit.h / 2);
+  return nearestWalkable(r, cx, cy);
+}
+
+// ------------------------------------------------------------------
 // regla anti-bucle
 // ------------------------------------------------------------------
 
@@ -286,51 +692,58 @@ function exitTouchesWalkable(room, exit) {
 // contra la salida opuesta, sin poder avanzar nunca.
 // Además, el spawn y los toSpawn tienen que estar sobre el piso caminable, cada sala
 // necesita polígonos y ninguna salida puede quedar flotando lejos del piso.
-// Devuelve la lista de violaciones (vacía si todo está bien).
-function validateRooms(rooms = ROOMS) {
+// Devuelve la lista de violaciones de UNA sala (vacía si todo está bien).
+function validateRoom(room, rooms = ROOMS) {
   const problems = [];
 
-  for (const room of Object.values(rooms)) {
-    if (!Array.isArray(room.walkable) || room.walkable.length === 0) {
-      problems.push(`la sala "${room.id}" no define polígonos caminables`);
-    }
+  if (!Array.isArray(room.walkable) || room.walkable.length === 0) {
+    problems.push(`la sala "${room.id}" no define polígonos caminables`);
+  }
 
-    // El spawn tiene que estar en el piso caminable.
-    if (!isWalkable(room, room.spawn.x, room.spawn.y)) {
-      problems.push(`el spawn de "${room.id}" no está sobre el piso caminable`);
-    }
+  // El spawn tiene que estar en el piso caminable.
+  if (!isWalkable(room, room.spawn.x, room.spawn.y)) {
+    problems.push(`el spawn de "${room.id}" no está sobre el piso caminable`);
+  }
 
-    // El spawn no puede estar sobre una salida de su propia sala.
-    for (const exit of room.exits || []) {
-      if (isInsideExit(exit, room.spawn.x, room.spawn.y)) {
-        problems.push(`spawn de "${room.id}" cae dentro de la salida hacia "${exit.to}"`);
-      }
-      // La salida tiene que tocar el piso caminable: si no, es unreachable.
-      if (!exitTouchesWalkable(room, exit)) {
-        problems.push(`la salida de "${room.id}" hacia "${exit.to}" no toca el piso caminable`);
-      }
+  // El spawn no puede estar sobre una salida de su propia sala.
+  for (const exit of room.exits || []) {
+    if (isInsideExit(exit, room.spawn.x, room.spawn.y)) {
+      problems.push(`spawn de "${room.id}" cae dentro de la salida hacia "${exit.to}"`);
     }
+    // La salida tiene que tocar el piso caminable: si no, es unreachable.
+    if (!exitTouchesWalkable(room, exit)) {
+      problems.push(`la salida de "${room.id}" hacia "${exit.to}" no toca el piso caminable`);
+    }
+  }
 
-    // El toSpawn no puede estar sobre una salida de la sala a la que se entra.
-    for (const exit of room.exits || []) {
-      const target = rooms[exit.to];
-      if (!target) {
-        problems.push(`la salida de "${room.id}" apunta a una sala inexistente: "${exit.to}"`);
-        continue;
-      }
-      if (!isWalkable(target, exit.toSpawn.x, exit.toSpawn.y)) {
-        problems.push(`toSpawn de "${room.id}"→"${exit.to}" no está sobre el piso caminable`);
-      }
-      for (const targetExit of target.exits || []) {
-        if (isInsideExit(targetExit, exit.toSpawn.x, exit.toSpawn.y)) {
-          problems.push(
-            `toSpawn de "${room.id}"→"${exit.to}" cae dentro de una salida de "${exit.to}"`
-          );
-        }
+  // El toSpawn no puede estar sobre una salida de la sala a la que se entra.
+  for (const exit of room.exits || []) {
+    const target = rooms[exit.to];
+    if (!target) {
+      problems.push(`la salida de "${room.id}" apunta a una sala inexistente: "${exit.to}"`);
+      continue;
+    }
+    if (!isWalkable(target, exit.toSpawn.x, exit.toSpawn.y)) {
+      problems.push(`toSpawn de "${room.id}"→"${exit.to}" no está sobre el piso caminable`);
+    }
+    for (const targetExit of target.exits || []) {
+      if (isInsideExit(targetExit, exit.toSpawn.x, exit.toSpawn.y)) {
+        problems.push(
+          `toSpawn de "${room.id}"→"${exit.to}" cae dentro de una salida de "${exit.to}"`
+        );
       }
     }
   }
 
+  return problems;
+}
+
+// Los problemas de TODO el catálogo (la lista de las salas, una por una).
+function validateRooms(rooms = ROOMS) {
+  const problems = [];
+  for (const room of Object.values(rooms)) {
+    problems.push(...validateRoom(room, rooms));
+  }
   return problems;
 }
 
@@ -367,14 +780,25 @@ module.exports = {
   ROOMS,
   MOVE_WINDOW_MS,
   MOVE_MAX,
+  SPEED,
   isValidRoom,
   getRoom,
+  addRoom,
+  removeRoom,
   isInsideRoom,
   clampToRoom,
   exitAt,
   isWalkable,
   nearestWalkable,
   walkablePolygons,
+  findPath,
+  pathIsWalkable,
+  pathLength,
+  pointAlongPath,
+  pathFacing,
+  segmentWalkable,
+  exitThreshold,
   allowMove,
+  validateRoom,
   validateRooms,
 };
