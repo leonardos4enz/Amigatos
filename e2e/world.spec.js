@@ -145,7 +145,7 @@ test('dos personas se ven en la plaza, caminan y cambian de sala', async ({ brow
 
     // 3. A hace clic en el piso: su gato camina hasta ahí (±1 por el redondeo).
     const spawn = await requireWorldState(pageA);
-    const target = { x: 20, y: 20 };
+    const target = { x: 60, y: 180 };
     await clickLogical(pageA, target.x, target.y);
     await expect.poll(async () => {
       const w = await worldState(pageA);

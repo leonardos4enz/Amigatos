@@ -89,7 +89,7 @@ test('las salidas de la sala son botones que llevan al gato a otra sala', async 
   await expect.poll(async () => page.evaluate(() => {
     const w = globalThis.window.__amigatos;
     return w && w.me ? `${w.me.x},${w.me.y}` : null;
-  })).toBe('84,56');
+  })).toBe('290,180');
 
   expect(errors, `errores de JavaScript: ${errors.join(' | ')}`).toEqual([]);
 });

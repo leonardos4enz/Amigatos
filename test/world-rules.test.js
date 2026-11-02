@@ -4,7 +4,18 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const world = require('../server/world');
 
-const { ROOMS, isValidRoom, getRoom, isInsideRoom, clampToRoom, exitAt, allowMove } = world;
+const {
+  ROOMS,
+  isValidRoom,
+  getRoom,
+  isInsideRoom,
+  clampToRoom,
+  exitAt,
+  isWalkable,
+  nearestWalkable,
+  walkablePolygons,
+  allowMove,
+} = world;
 
 // ------------------------------------------------------------------
 // catálogo
@@ -14,30 +25,37 @@ test('ROOMS tiene exactamente las 3 salas del mundo', () => {
   assert.deepEqual(Object.keys(ROOMS).sort(), ['cafe', 'parque', 'plaza']);
 });
 
+test('las tres salas miden 320×200', () => {
+  for (const room of Object.values(ROOMS)) {
+    assert.equal(room.width, 320, `ancho de "${room.id}"`);
+    assert.equal(room.height, 200, `alto de "${room.id}"`);
+  }
+});
+
 test('plaza: nombre, fondo, tamaño, spawn y salidas', () => {
   const plaza = ROOMS.plaza;
   assert.equal(plaza.id, 'plaza');
   assert.equal(plaza.name, 'Plaza Bigotes');
   assert.equal(plaza.bg, 'plaza');
-  assert.equal(plaza.width, 96);
-  assert.equal(plaza.height, 72);
-  assert.deepEqual(plaza.spawn, { x: 48, y: 60 });
+  assert.equal(plaza.width, 320);
+  assert.equal(plaza.height, 200);
+  assert.deepEqual(plaza.spawn, { x: 100, y: 180 });
   assert.equal(plaza.exits.length, 2);
 
   const aParque = plaza.exits.find((e) => e.to === 'parque');
   assert.deepEqual(
     { x: aParque.x, y: aParque.y, w: aParque.w, h: aParque.h },
-    { x: 0, y: 30, w: 8, h: 14 }
+    { x: 0, y: 130, w: 16, h: 40 }
   );
-  assert.deepEqual(aParque.toSpawn, { x: 84, y: 56 });
+  assert.deepEqual(aParque.toSpawn, { x: 290, y: 180 });
   assert.equal(aParque.label, 'Parque Ronroneo');
 
   const aCafe = plaza.exits.find((e) => e.to === 'cafe');
   assert.deepEqual(
     { x: aCafe.x, y: aCafe.y, w: aCafe.w, h: aCafe.h },
-    { x: 88, y: 30, w: 8, h: 14 }
+    { x: 304, y: 130, w: 16, h: 40 }
   );
-  assert.deepEqual(aCafe.toSpawn, { x: 12, y: 56 });
+  assert.deepEqual(aCafe.toSpawn, { x: 30, y: 180 });
   assert.equal(aCafe.label, 'Café del Ovillo');
 });
 
@@ -46,18 +64,18 @@ test('parque: nombre, fondo, tamaño, spawn y salida', () => {
   assert.equal(parque.id, 'parque');
   assert.equal(parque.name, 'Parque Ronroneo');
   assert.equal(parque.bg, 'parque');
-  assert.equal(parque.width, 96);
-  assert.equal(parque.height, 72);
-  assert.deepEqual(parque.spawn, { x: 48, y: 60 });
+  assert.equal(parque.width, 320);
+  assert.equal(parque.height, 200);
+  assert.deepEqual(parque.spawn, { x: 240, y: 180 });
   assert.equal(parque.exits.length, 1);
 
   const salida = parque.exits[0];
   assert.deepEqual(
     { x: salida.x, y: salida.y, w: salida.w, h: salida.h },
-    { x: 88, y: 30, w: 8, h: 14 }
+    { x: 304, y: 130, w: 16, h: 40 }
   );
   assert.equal(salida.to, 'plaza');
-  assert.deepEqual(salida.toSpawn, { x: 12, y: 37 });
+  assert.deepEqual(salida.toSpawn, { x: 30, y: 180 });
   assert.equal(salida.label, 'Plaza Bigotes');
 });
 
@@ -66,18 +84,18 @@ test('cafe: nombre, fondo, tamaño, spawn y salida', () => {
   assert.equal(cafe.id, 'cafe');
   assert.equal(cafe.name, 'Café del Ovillo');
   assert.equal(cafe.bg, 'cafe');
-  assert.equal(cafe.width, 96);
-  assert.equal(cafe.height, 72);
-  assert.deepEqual(cafe.spawn, { x: 48, y: 58 });
+  assert.equal(cafe.width, 320);
+  assert.equal(cafe.height, 200);
+  assert.deepEqual(cafe.spawn, { x: 200, y: 180 });
   assert.equal(cafe.exits.length, 1);
 
   const salida = cafe.exits[0];
   assert.deepEqual(
     { x: salida.x, y: salida.y, w: salida.w, h: salida.h },
-    { x: 0, y: 30, w: 8, h: 14 }
+    { x: 0, y: 130, w: 16, h: 40 }
   );
   assert.equal(salida.to, 'plaza');
-  assert.deepEqual(salida.toSpawn, { x: 84, y: 37 });
+  assert.deepEqual(salida.toSpawn, { x: 290, y: 180 });
   assert.equal(salida.label, 'Plaza Bigotes');
 });
 
@@ -104,20 +122,20 @@ test('isValidRoom y getRoom solo aceptan ids del catálogo', () => {
 test('isInsideRoom respeta los bordes de la sala', () => {
   const plaza = getRoom('plaza');
   assert.equal(isInsideRoom(plaza, 0, 0), true);
-  assert.equal(isInsideRoom(plaza, 96, 72), true);
-  assert.equal(isInsideRoom(plaza, 48, 60), true);
+  assert.equal(isInsideRoom(plaza, 320, 200), true);
+  assert.equal(isInsideRoom(plaza, 160, 100), true);
   assert.equal(isInsideRoom(plaza, -1, 0), false);
-  assert.equal(isInsideRoom(plaza, 97, 0), false);
+  assert.equal(isInsideRoom(plaza, 321, 0), false);
   assert.equal(isInsideRoom(plaza, 0, -1), false);
-  assert.equal(isInsideRoom(plaza, 0, 73), false);
+  assert.equal(isInsideRoom(plaza, 0, 201), false);
 });
 
 test('clampToRoom deja el punto dentro de la sala', () => {
   const plaza = getRoom('plaza');
   assert.deepEqual(clampToRoom(plaza, -5, -3), { x: 0, y: 0 });
-  assert.deepEqual(clampToRoom(plaza, 200, 300), { x: 96, y: 72 });
-  assert.deepEqual(clampToRoom(plaza, 48, 60), { x: 48, y: 60 });
-  const dentro = clampToRoom(plaza, 120, -4);
+  assert.deepEqual(clampToRoom(plaza, 900, 800), { x: 320, y: 200 });
+  assert.deepEqual(clampToRoom(plaza, 160, 100), { x: 160, y: 100 });
+  const dentro = clampToRoom(plaza, 500, -4);
   assert.ok(isInsideRoom(plaza, dentro.x, dentro.y));
 });
 
@@ -127,17 +145,185 @@ test('clampToRoom deja el punto dentro de la sala', () => {
 
 test('exitAt devuelve la salida que contiene el punto', () => {
   const plaza = getRoom('plaza');
-  const aParque = exitAt(plaza, 4, 37);
+  const aParque = exitAt(plaza, 8, 150);
   assert.ok(aParque);
   assert.equal(aParque.to, 'parque');
 
-  const aCafe = exitAt(plaza, 92, 37);
+  const aCafe = exitAt(plaza, 312, 150);
   assert.ok(aCafe);
   assert.equal(aCafe.to, 'cafe');
 
-  assert.equal(exitAt(plaza, 48, 60), null);
-  assert.equal(exitAt(plaza, 4, 10), null);
-  assert.equal(exitAt(getRoom('parque'), 4, 37), null);
+  assert.equal(exitAt(plaza, 160, 150), null);
+  assert.equal(exitAt(plaza, 8, 40), null);
+  assert.equal(exitAt(getRoom('parque'), 8, 150), null);
+});
+
+// ------------------------------------------------------------------
+// piso caminable
+// ------------------------------------------------------------------
+
+test('cada sala define polígonos caminables con vértices enteros', () => {
+  for (const room of Object.values(ROOMS)) {
+    const polys = walkablePolygons(room);
+    assert.ok(polys.length >= 1, `la sala "${room.id}" necesita polígonos`);
+    for (const poly of polys) {
+      assert.ok(poly.length >= 3, `polígono con menos de 3 vértices en "${room.id}"`);
+      for (const p of poly) {
+        assert.equal(Number.isInteger(p.x), true, 'x entero');
+        assert.equal(Number.isInteger(p.y), true, 'y entero');
+        assert.ok(p.x >= 0 && p.x <= room.width, 'x dentro de la sala');
+        assert.ok(p.y >= 0 && p.y <= room.height, 'y dentro de la sala');
+      }
+    }
+  }
+});
+
+test('el spawn de cada sala está sobre su piso caminable', () => {
+  for (const room of Object.values(ROOMS)) {
+    assert.equal(
+      isWalkable(room, room.spawn.x, room.spawn.y),
+      true,
+      `el spawn de "${room.id}" no es caminable`
+    );
+  }
+});
+
+// Puntos de muestra de cada sala: dentro del piso y fuera (cielo, por encima de la
+// línea de suelo y huecos entre los edificios).
+const MUESTRAS = {
+  plaza: {
+    dentro: [{ x: 100, y: 180 }, { x: 20, y: 130 }, { x: 300, y: 190 }, { x: 160, y: 130 }],
+    fuera: [
+      { x: 160, y: 20, motivo: 'cielo' },
+      { x: 100, y: 105, motivo: 'por encima de la línea de suelo' },
+      { x: 60, y: 95, motivo: 'hueco entre los edificios del fondo' },
+      { x: 160, y: 160, motivo: 'la fuente' },
+    ],
+  },
+  parque: {
+    dentro: [{ x: 240, y: 180 }, { x: 10, y: 190 }, { x: 300, y: 130 }, { x: 150, y: 130 }],
+    fuera: [
+      { x: 160, y: 30, motivo: 'cielo' },
+      { x: 200, y: 105, motivo: 'por encima de la línea de suelo' },
+      { x: 40, y: 95, motivo: 'hueco entre los árboles del fondo' },
+      { x: 160, y: 170, motivo: 'el estanque' },
+    ],
+  },
+  cafe: {
+    dentro: [{ x: 200, y: 180 }, { x: 30, y: 120 }, { x: 100, y: 190 }, { x: 300, y: 120 }],
+    fuera: [
+      { x: 160, y: 30, motivo: 'cielo (la pared)' },
+      { x: 170, y: 105, motivo: 'por encima de la línea de suelo' },
+      { x: 60, y: 60, motivo: 'hueco entre los muebles de la pared' },
+      { x: 120, y: 130, motivo: 'el mostrador' },
+      { x: 280, y: 175, motivo: 'el mueble grande (la mesa)' },
+    ],
+  },
+};
+
+// Puntos de muestra dentro de un polígono: el centro y un punto a medio camino
+// hacia cada vértice (así se recorre todo el polígono).
+function muestrasDe(poly) {
+  const cx = poly.reduce((s, p) => s + p.x, 0) / poly.length;
+  const cy = poly.reduce((s, p) => s + p.y, 0) / poly.length;
+  const puntos = [{ x: Math.round(cx), y: Math.round(cy) }];
+  for (const p of poly) {
+    puntos.push({
+      x: Math.round((p.x + cx) / 2),
+      y: Math.round((p.y + cy) / 2),
+    });
+  }
+  return puntos;
+}
+
+test('dentro de cada polígono de cada sala es caminable', () => {
+  for (const room of Object.values(ROOMS)) {
+    for (const poly of walkablePolygons(room)) {
+      for (const p of muestrasDe(poly)) {
+        assert.equal(
+          isWalkable(room, p.x, p.y),
+          true,
+          `(${p.x}, ${p.y}) debería ser caminable en "${room.id}"`
+        );
+      }
+    }
+  }
+});
+
+test('fuera del piso caminable no se puede caminar', () => {
+  for (const room of Object.values(ROOMS)) {
+    const muestras = MUESTRAS[room.id];
+    for (const p of muestras.dentro) {
+      assert.equal(
+        isWalkable(room, p.x, p.y),
+        true,
+        `(${p.x}, ${p.y}) debería ser caminable en "${room.id}"`
+      );
+    }
+    for (const p of muestras.fuera) {
+      assert.equal(
+        isWalkable(room, p.x, p.y),
+        false,
+        `(${p.x}, ${p.y}) no debería ser caminable en "${room.id}" (${p.motivo})`
+      );
+    }
+  }
+});
+
+test('el borde de un polígono cuenta como dentro del piso', () => {
+  const plaza = getRoom('plaza');
+  // La fuente va de x 140..180, y 145..200: sus bordes pertenecen al suelo.
+  assert.equal(isWalkable(plaza, 140, 160), true);
+  assert.equal(isWalkable(plaza, 141, 160), false);
+  assert.equal(isWalkable(plaza, 160, 145), true);
+  assert.equal(isWalkable(plaza, 160, 146), false);
+});
+
+test('isWalkable no acepta una sala inexistente ni coordenadas raras', () => {
+  assert.equal(isWalkable(getRoom('nope'), 10, 10), false);
+  assert.equal(isWalkable(null, 10, 10), false);
+  assert.equal(isWalkable(getRoom('plaza'), NaN, 10), false);
+  assert.equal(isWalkable(getRoom('plaza'), 10, undefined), false);
+});
+
+test('nearestWalkable de un punto del cielo devuelve el punto caminable más cercano', () => {
+  for (const room of Object.values(ROOMS)) {
+    const desde = { x: Math.round(room.width / 2), y: 10 };
+    const cercano = nearestWalkable(room, desde.x, desde.y);
+    assert.ok(cercano, `"${room.id}" no encontró un punto caminable`);
+    assert.equal(
+      isWalkable(room, cercano.x, cercano.y),
+      true,
+      `el punto devuelto en "${room.id}" no es caminable`
+    );
+
+    // Búsqueda exhaustiva: ningún otro punto caminable está más cerca.
+    let mejor = Infinity;
+    for (let y = 0; y <= room.height; y++) {
+      for (let x = 0; x <= room.width; x++) {
+        if (!isWalkable(room, x, y)) continue;
+        const d = (x - desde.x) ** 2 + (y - desde.y) ** 2;
+        if (d < mejor) mejor = d;
+      }
+    }
+    const d = (cercano.x - desde.x) ** 2 + (cercano.y - desde.y) ** 2;
+    assert.equal(d, mejor, `en "${room.id}" hay un punto caminable más cerca`);
+  }
+});
+
+test('nearestWalkable de un punto ya caminable devuelve ese mismo punto', () => {
+  for (const room of Object.values(ROOMS)) {
+    const p = room.spawn;
+    assert.deepEqual(nearestWalkable(room, p.x, p.y), { x: p.x, y: p.y });
+  }
+});
+
+test('walkablePolygons devuelve una copia: el catálogo no se puede tocar', () => {
+  const polys = walkablePolygons(ROOMS.plaza);
+  assert.deepEqual(polys, ROOMS.plaza.walkable);
+  polys[0][0].x = -999;
+  assert.notEqual(ROOMS.plaza.walkable[0][0].x, -999);
+  assert.equal(walkablePolygons(getRoom('nope')).length, 0);
 });
 
 // ------------------------------------------------------------------
@@ -176,8 +362,100 @@ test('el spawn de cada sala no cae dentro de una salida de esa misma sala', () =
   }
 });
 
+test('cada toSpawn cae sobre el piso caminable de la sala destino', () => {
+  for (const room of Object.values(ROOMS)) {
+    for (const exit of room.exits) {
+      const destino = getRoom(exit.to);
+      assert.ok(destino, `la salida de "${room.id}" apunta a "${exit.to}"`);
+      assert.equal(
+        isWalkable(destino, exit.toSpawn.x, exit.toSpawn.y),
+        true,
+        `toSpawn de "${room.id}"→"${exit.to}" no es caminable en "${exit.to}"`
+      );
+    }
+  }
+});
+
+test('la zona interior de cada salida toca el piso caminable', () => {
+  for (const room of Object.values(ROOMS)) {
+    for (const salida of room.exits) {
+      let toca = false;
+      for (let y = salida.y + 1; y < salida.y + salida.h - 1 && !toca; y++) {
+        for (let x = salida.x + 1; x < salida.x + salida.w - 1; x++) {
+          if (isWalkable(room, x, y)) { toca = true; break; }
+        }
+      }
+      assert.equal(toca, true, `la salida de "${room.id}" no toca el piso caminable`);
+    }
+  }
+});
+
 test('validateRooms no reporta problemas en el catálogo', () => {
   assert.deepEqual(world.validateRooms(), []);
+});
+
+test('validateRooms avisa de una sala sin polígonos y de spawns no caminables', () => {
+  const roto = {
+    sola: {
+      id: 'sola',
+      name: 'Sala rota',
+      bg: 'plaza',
+      width: 320,
+      height: 200,
+      spawn: { x: 160, y: 10 },
+      walkable: [],
+      exits: [],
+    },
+  };
+  const problemas = world.validateRooms(roto);
+  assert.ok(problemas.some((p) => p.includes('sola') && p.includes('polígonos caminables')));
+  assert.ok(problemas.some((p) => p.includes('sola') && p.includes('spawn')));
+});
+
+test('validateRooms avisa de un toSpawn no caminable y de una salida lejos del piso', () => {
+  const roto = {
+    origen: {
+      id: 'origen',
+      name: 'Sala de salida',
+      bg: 'plaza',
+      width: 320,
+      height: 200,
+      spawn: { x: 100, y: 180 },
+      walkable: [[{ x: 0, y: 110 }, { x: 320, y: 110 }, { x: 320, y: 200 }, { x: 0, y: 200 }]],
+      exits: [
+        {
+          x: 0, y: 130, w: 16, h: 40,
+          to: 'destino',
+          toSpawn: { x: 160, y: 20 },
+          label: 'Destino',
+        },
+      ],
+    },
+    destino: {
+      id: 'destino',
+      name: 'Sala de destino',
+      bg: 'parque',
+      width: 320,
+      height: 200,
+      spawn: { x: 100, y: 180 },
+      walkable: [[{ x: 0, y: 110 }, { x: 320, y: 110 }, { x: 320, y: 200 }, { x: 0, y: 200 }]],
+      exits: [],
+    },
+  };
+  const problemas = world.validateRooms(roto);
+  assert.ok(
+    problemas.some((p) => p.includes('toSpawn') && p.includes('caminable')),
+    `no avisó del toSpawn no caminable: ${problemas.join(' | ')}`
+  );
+
+  // Una salida pegada al borde del piso sí es válida; una salida en el cielo no.
+  const enElCielo = JSON.parse(JSON.stringify(roto));
+  enElCielo.origen.exits[0].y = 10;
+  const problemas2 = world.validateRooms(enElCielo);
+  assert.ok(
+    problemas2.some((p) => p.includes('no toca el piso caminable')),
+    `no avisó de la salida en el cielo: ${problemas2.join(' | ')}`
+  );
 });
 
 // ------------------------------------------------------------------

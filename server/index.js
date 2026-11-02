@@ -245,6 +245,9 @@ function worldRoomView(roomData) {
     width: roomData.width,
     height: roomData.height,
     spawn: { x: roomData.spawn.x, y: roomData.spawn.y },
+    // Los polígonos del piso caminable: el cliente los usa para predecir el punto
+    // caminable más cercano cuando se hace clic fuera del piso.
+    walkable: worldRules.walkablePolygons(roomData),
     exits: roomData.exits.map((e) => ({
       x: e.x,
       y: e.y,

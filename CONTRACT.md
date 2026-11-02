@@ -172,12 +172,33 @@ el cliente solo dibuja lo que recibe. El catálogo de salas y las reglas de movi
 ### Salas
 | id | nombre | bg | tamaño (ancho×alto) | spawn | salidas |
 |---|---|---|---|---|---|
-| `plaza` | Plaza Bigotes | `plaza` | 96×72 | (48, 60) | → `parque` en x 0–7, y 30–43 (llega en 84, 56) · → `cafe` en x 88–95, y 30–43 (llega en 12, 56) |
-| `parque` | Parque Ronroneo | `parque` | 96×72 | (48, 60) | → `plaza` en x 88–95, y 30–43 (llega en 12, 37) |
-| `cafe` | Café del Ovillo | `cafe` | 96×72 | (48, 58) | → `plaza` en x 0–7, y 30–43 (llega en 84, 37) |
+| `plaza` | Plaza Bigotes | `plaza` | 320×200 | (100, 180) | → `parque` en x 0–15, y 130–169 (llega en 290, 180) · → `cafe` en x 304–319, y 130–169 (llega en 30, 180) |
+| `parque` | Parque Ronroneo | `parque` | 320×200 | (240, 180) | → `plaza` en x 304–319, y 130–169 (llega en 30, 180) |
+| `cafe` | Café del Ovillo | `cafe` | 320×200 | (200, 180) | → `plaza` en x 0–15, y 130–169 (llega en 290, 180) |
 
-Coordenadas lógicas enteras: x 0..width, y 0..height (96×72, como los fondos de CatBG). El rectángulo
-de una salida cubre x..x+w-1, y..y+h-1. El room de Socket.IO de una sala es `world:<roomId>`.
+Coordenadas lógicas enteras: x 0..width, y 0..height (320×200). El rectángulo de una salida cubre
+x..x+w-1, y..y+h-1. El room de Socket.IO de una sala es `world:<roomId>`.
+
+### Piso caminable
+Cada sala define `walkable`: una lista de polígonos (rectángulos) en coordenadas lógicas enteras que
+delimitan el suelo por el que se puede caminar. El cielo, las paredes, el agua, los mostradores, las
+fuentes y los muebles grandes quedan **fuera** de los polígonos.
+
+- El `spawn` de cada sala y el `toSpawn` de cada salida caen sobre el piso caminable de su sala.
+- El `toSpawn` de una salida no cae dentro de ninguna salida de la sala destino (si no, el gato rebota).
+- Los rectángulos de las salidas están pegados al borde del piso caminable: su zona interior lo toca.
+
+`server/world.js` exporta tres funciones puras sobre la geometría:
+| Función | Qué hace |
+|---|---|
+| `isWalkable(room, x, y)` | ¿El punto está dentro de algún polígono de `room.walkable`? El borde cuenta como dentro. |
+| `nearestWalkable(room, x, y)` | El punto caminable más cercano al punto dado (búsqueda exhaustiva sobre la retícula de la sala). Si el punto ya es caminable, devuelve ese mismo punto. |
+| `walkablePolygons(room)` | Los polígonos de `room.walkable` (copia profunda). |
+
+`validateRooms()` comprueba el catálogo: avisa de spawns y `toSpawn` no caminables, de salas sin
+polígonos y de salidas cuya zona interior no toca el piso caminable. El módulo hace una autocomprobación
+al cargarse: si hay problemas, `require('server/world')` lanza y el servidor no arranca con geometría
+inválida.
 
 ### Interfaz de las salidas
 - La lista de salidas de la sala (`#world-exits`) pinta cada salida como un `<button>` con el nombre de la
@@ -193,7 +214,9 @@ de una salida cubre x..x+w-1, y..y+h-1. El room de Socket.IO de una sala es `wor
 
 ### Servidor → cliente
 - `world:state` `{ room, players, me }` — snapshot de la sala.
-  - `room` = `{ id, name, bg, width, height, spawn: {x, y}, exits: [{x, y, w, h, to, toSpawn: {x, y}, label}] }`
+  - `room` = `{ id, name, bg, width, height, spawn: {x, y}, walkable: [[{x, y}, ...], ...], exits: [{x, y, w, h, to, toSpawn: {x, y}, label}] }`
+  - `room.walkable` = los polígonos del piso caminable de la sala (los mismos puntos que define
+    `server/world.js`), para que el cliente pueda predecir el punto caminable más cercano.
   - `players` = **todos** los gatos de la sala, incluido el propio: `{ id, username, cat, x, y }`
   - `me` = el propio gato: `{ id, username, cat, x, y }`
 - `world:join` `{ player }` — alguien más entró a tu sala: `{ id, username, cat, x, y }`.

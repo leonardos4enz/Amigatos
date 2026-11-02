@@ -3,6 +3,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { startServer, stopServer, registerUser, connect, waitFor } = require('./helpers');
+const { ROOMS } = require('../server/world');
 
 let base;
 const sockets = [];
@@ -44,16 +45,16 @@ test('entrar sin room lleva a la plaza, en el spawn', async () => {
   assert.equal(state.room.id, 'plaza');
   assert.equal(state.room.name, 'Plaza Bigotes');
   assert.equal(state.room.bg, 'plaza');
-  assert.equal(state.room.width, 96);
-  assert.equal(state.room.height, 72);
-  assert.deepEqual(state.room.spawn, { x: 48, y: 60 });
+  assert.equal(state.room.width, 320);
+  assert.equal(state.room.height, 200);
+  assert.deepEqual(state.room.spawn, { x: 100, y: 180 });
   assert.equal(state.room.exits.length, 2);
   assert.deepEqual(state.me, {
     id: p.user.id,
     username: p.user.username,
     cat: state.me.cat,
-    x: 48,
-    y: 60,
+    x: 100,
+    y: 180,
   });
   assert.ok(state.me.cat, 'el gato viaja al cliente');
   // La lista de gatos de la sala incluye al propio.
@@ -66,9 +67,19 @@ test('entrar en una sala concreta devuelve esa sala', async () => {
   const state = await enter(p, 'cafe');
   assert.equal(state.room.id, 'cafe');
   assert.equal(state.room.name, 'Café del Ovillo');
-  assert.deepEqual(state.room.spawn, { x: 48, y: 58 });
-  assert.equal(state.me.x, 48);
-  assert.equal(state.me.y, 58);
+  assert.deepEqual(state.room.spawn, { x: 200, y: 180 });
+  assert.equal(state.me.x, 200);
+  assert.equal(state.me.y, 180);
+});
+
+test('world:state manda el piso caminable de la sala', async () => {
+  const p = await player();
+  const state = await enter(p);
+  assert.deepEqual(state.room.walkable, ROOMS.plaza.walkable);
+
+  const enCafe = await enter(p, 'cafe');
+  assert.deepEqual(enCafe.room.walkable, ROOMS.cafe.walkable);
+  assert.ok(enCafe.room.walkable.length >= 1);
 });
 
 test('world:enter con una sala inexistente da error', async () => {
@@ -95,7 +106,7 @@ test('world:move fuera de la sala da error y el gato no se mueve', async () => {
   const moves = [];
   a.socket.on('world:moved', (m) => moves.push(m));
 
-  const { message } = await moveError(a, { x: 200, y: 0 });
+  const { message } = await moveError(a, { x: 400, y: 0 });
   assert.equal(message, 'No puedes salir de la sala.');
 
   // Un movimiento válido posterior: solo ese debe verse.
@@ -161,15 +172,15 @@ test('mover sobre una salida cambia de sala', async () => {
   const leftForB = waitFor(b.socket, 'world:left');
   const joinForC = waitFor(c.socket, 'world:join');
   const state = waitFor(a.socket, 'world:state');
-  a.socket.emit('world:move', { x: 2, y: 35 });
+  a.socket.emit('world:move', { x: 4, y: 150 });
 
   const newState = await state;
   assert.equal(newState.room.id, 'parque');
-  assert.deepEqual({ x: newState.me.x, y: newState.me.y }, { x: 84, y: 56 });
+  assert.deepEqual({ x: newState.me.x, y: newState.me.y }, { x: 290, y: 180 });
   assert.deepEqual(await leftForB, { id: a.user.id });
   const joined = await joinForC;
   assert.equal(joined.player.id, a.user.id);
-  assert.deepEqual({ x: joined.player.x, y: joined.player.y }, { x: 84, y: 56 });
+  assert.deepEqual({ x: joined.player.x, y: joined.player.y }, { x: 290, y: 180 });
 });
 
 // ------------------------------------------------------------------
