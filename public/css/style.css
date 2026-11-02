@@ -520,24 +520,18 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .avatar-fallback { font-size: 28px; line-height: 1; }
 
 /* ---------- El mundo ---------- */
+/* el contenedor deja sitio para el escenario a escala 3 (320*3 = 960 px de CSS) */
 .world-wrap {
   display: grid;
   gap: 14px;
   justify-items: center;
-  max-width: 680px;
+  max-width: 960px;
   margin: 0 auto;
 }
 
-/* el piso: 96×72 lógicos (4:3). El fondo pixel art y los gatos van encima. */
-.world-stage {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  overflow: hidden;
-  background: var(--sky);
-  image-rendering: pixelated;
-  cursor: crosshair;
-}
+/* el piso: 320×200 lógicos (16:10). El tamaño y la escala entera los fija
+   public/css/world-scale.css (con --world-scale, que calcula public/js/world.js).
+   El fondo pixel art y los gatos van encima. */
 /* sin padding: el fondo ocupa todo el piso y las coordenadas del clic cuadran */
 .world-stage.panel { padding: 0; }
 .world-stage canvas { display: block; image-rendering: pixelated; }

@@ -7,21 +7,25 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/world-scale.css">
 <style>
   body{margin:0;padding:16px;background:#fdf1f4;color:#3b2a40;font-family:"Pixelify Sans",monospace}
   h1{font-size:20px;margin:0 0 6px}
   p{margin:0 0 12px;font-size:14px}
+  /* el contenedor mide 640 px: el escenario sale a escala 2 (320*2 x 200*2) */
+  #world-stage-wrap{width:640px;margin:0 auto}
   /* el escenario tiene tamaño fijo: las coordenadas lógicas se calculan sobre él */
-  #world-stage{position:relative;width:640px;height:480px;margin:0 auto;overflow:hidden;
-    background:#bfe3f5;box-shadow:0 0 0 4px #3b2a40}
+  #world-stage{overflow:hidden;background:#bfe3f5;box-shadow:0 0 0 4px #3b2a40;margin:0 auto}
   #out{margin:12px auto;width:640px;font-size:13px;white-space:pre-wrap}
 </style>
 </head>
 <body>
 <h1>🐾 Laboratorio del mundo</h1>
-<p>Prueba de <code>js/world.js</code>: clic en el piso = coordenadas lógicas.</p>
+<p>Prueba de <code>js/world.js</code>: clic en el piso = coordenadas lógicas (sala de 320×200).</p>
 
-<div id="world-stage"></div>
+<div id="world-stage-wrap">
+  <div id="world-stage" class="world-stage"></div>
+</div>
 <div id="out"></div>
 
 <script src="js/cat-art.js"></script>
@@ -36,15 +40,25 @@
   // cada clic en el piso se guarda aquí con sus coordenadas lógicas
   window.__labMoves = [];
 
+  // rectángulo como polígono (igual que en server/world.js)
+  function rect(x0, y0, x1, y1) {
+    return [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  }
+
   var ROOM = {
     id: 'plaza',
     name: 'Plaza Bigotes',
     bg: 'plaza',
-    width: 96,
-    height: 72,
+    width: 320,
+    height: 200,
+    walkable: [
+      rect(0, 110, 140, 200),
+      rect(180, 110, 320, 200),
+      rect(140, 110, 180, 145)
+    ],
     exits: [
-      { x: 0, y: 30, w: 8, h: 14, to: 'parque', label: 'Parque Ronroneo' },
-      { x: 88, y: 30, w: 8, h: 14, to: 'cafe', label: 'Café del Ovillo' }
+      { x: 0, y: 130, w: 16, h: 40, to: 'parque', label: 'Parque Ronroneo' },
+      { x: 304, y: 130, w: 16, h: 40, to: 'cafe', label: 'Café del Ovillo' }
     ]
   };
 
@@ -52,10 +66,10 @@
   var catNube = CatArt.randomCat();
 
   var PLAYERS = [
-    { id: 1, username: 'Michi', cat: catMichi, x: 24, y: 20 },
-    { id: 2, username: 'Nube', cat: catNube, x: 70, y: 50 }
+    { id: 1, username: 'Michi', cat: catMichi, x: 100, y: 180 },
+    { id: 2, username: 'Nube', cat: catNube, x: 250, y: 180 }
   ];
-  var ME = { id: 1, username: 'Michi', cat: catMichi, x: 24, y: 20 };
+  var ME = { id: 1, username: 'Michi', cat: catMichi, x: 100, y: 180 };
 
   var out = document.getElementById('out');
 
