@@ -89,11 +89,11 @@ test('caminar a una salida cambia de sala y avisa a los de la sala anterior', as
   const leftForB = waitFor(b.socket, 'world:left');
   const stateForA = waitFor(a.socket, 'world:state');
   // La salida de la plaza hacia el parque.
-  a.socket.emit('world:move', { x: 4, y: 37 });
+  a.socket.emit('world:move', { x: 4, y: 150 });
 
   const newState = await stateForA;
   assert.equal(newState.room.id, 'parque');
-  assert.deepEqual({ x: newState.me.x, y: newState.me.y }, { x: 84, y: 56 });
+  assert.deepEqual({ x: newState.me.x, y: newState.me.y }, { x: 290, y: 180 });
   assert.deepEqual(await leftForB, { id: a.user.id });
 
   // Un gato del parque ve a A en su lista de jugadores.
@@ -101,7 +101,7 @@ test('caminar a una salida cambia de sala y avisa a los de la sala anterior', as
   const stateOfD = await enter(d, 'parque');
   const catA = stateOfD.players.find((pl) => pl.id === a.user.id);
   assert.ok(catA, 'A aparece en la lista de gatos del parque');
-  assert.deepEqual({ x: catA.x, y: catA.y }, { x: 84, y: 56 });
+  assert.deepEqual({ x: catA.x, y: catA.y }, { x: 290, y: 180 });
 });
 
 // ------------------------------------------------------------------
@@ -131,7 +131,7 @@ test('una posición fuera de la sala da error y el gato no se mueve', async () =
   const stateOfD = await enter(d);
   const catA = stateOfD.players.find((pl) => pl.id === a.user.id);
   assert.ok(catA, 'A sigue en la plaza');
-  assert.deepEqual({ x: catA.x, y: catA.y }, { x: 48, y: 60 });
+  assert.deepEqual({ x: catA.x, y: catA.y }, { x: 100, y: 180 });
 });
 
 // ------------------------------------------------------------------
