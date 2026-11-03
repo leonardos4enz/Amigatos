@@ -24,6 +24,8 @@
 
   function has(id) { return !!scenes[id]; }
   function resolve(id) { return scenes[id] ? id : (scenes[DEFAULT] ? DEFAULT : order[0]); }
+  // La escena completa (con sus datos, por ejemplo los rectángulos sólidos de una sala).
+  function get(id) { return scenes[id] || null; }
 
   // Los objetos sólidos de una escena: rectángulos {x, y, w, h} en coordenadas lógicas
   // con lo que la escena ocupa y que no se puede pisar (los puestos del mercado, por
@@ -122,6 +124,7 @@
     has: has,
     resolve: resolve,
     solids: solids,
+    get: get,
     DEFAULT: DEFAULT,
     paint: paint,
     mount: mount,
