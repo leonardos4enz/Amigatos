@@ -244,6 +244,12 @@ La ruta no puede cortar esquinas ni atravesar obstáculos:
   sala de destino (`label`). Al pulsarlo, con ratón o con teclado, el cliente emite `world:move` con el
   centro de esa salida: el cambio de sala lo decide el servidor con la misma validación que un clic en el
   piso (no hay atajo en el cliente).
+- Además, cada salida es un **objeto visible** del fondo (`docs/mundo.md §4`): el motor del mundo
+  (`public/js/world.js` con `public/js/world-exits.js`) pinta sobre el escenario un elemento por salida
+  con `data-exit="<destino>"`, la clase `world-exit-door`, la etiqueta `.world-exit-label` (con el nombre
+  del destino) y la clase `is-hover` al pasar el mouse (el cursor pasa a `pointer` y la etiqueta se hace
+  visible). Al pulsar esa puerta, el cliente emite `world:move` con el centro de la salida, igual que la
+  lista: el gato camina hasta el umbral y el cruce lo decide el servidor.
 
 ### Cliente → servidor
 - `world:enter` `{ room? }` — entra al mundo; sin `room` entra a `plaza`. Si ya estaba en el mundo, sale
