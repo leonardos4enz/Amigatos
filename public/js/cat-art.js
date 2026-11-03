@@ -1067,6 +1067,13 @@
         if (alive) addActive(ctrl);
         return ctrl;
       },
+      // Volta el sprite en caliente (el gato mira a la izquierda).
+      setFlip: function (f) {
+        flip = !!f;
+        draw(now() - start, true);
+        if (alive) addActive(ctrl);
+        return ctrl;
+      },
       play: function (a) {
         if (ANIMS.indexOf(a) < 0) a = 'idle';
         if (a !== 'happy' && a !== 'sad') baseAnim = a;
