@@ -24,6 +24,16 @@
   // misma que usa el servidor (SPEED en server/world.js): el gato se dibuja
   // avanzando por la ruta que manda el servidor, a la misma velocidad.
   var WALK_SPEED = 60;
+  // Tolerancia (px lógicos) para saber si un gato está "sobre" la ruta que
+  // manda el servidor: si su posición dibujada está a menos de esto de la
+  // ruta, sigue la ruta desde ahí (docs/mundo.md §3).
+  var ON_ROUTE = 2;
+  // Cuánto puede estar el gato dibujado por delante o por detrás de la
+  // posición que manda el servidor (px lógicos) para que se siga desde donde
+  // está dibujado. Más de esto significa que el cliente se ha desfasado (una
+  // pestaña en segundo plano, un mensaje perdido) y entonces manda el
+  // servidor.
+  var MAX_DESFASE = 16;
 
   var DEFAULT_ROOM = {
     id: 'plaza',
@@ -120,14 +130,15 @@
     return { x: last.x, y: last.y };
   }
 
-  // La distancia (px desde el principio de la ruta) del punto de la ruta más
-  // cercano a (x, y). Sirve para saber por dónde va el gato cuando el
-  // servidor manda una ruta con la posición actual.
-  function distanceAlongPath(path, x, y) {
-    if (!Array.isArray(path) || path.length === 0) return 0;
+  // El punto de la ruta más cercano a (x, y): dónde está (px desde el
+  // principio de la ruta), el punto en sí y a qué distancia está (al
+  // cuadrado) de la ruta.
+  function nearestOnPath(path, x, y) {
+    if (!Array.isArray(path) || path.length === 0) return null;
     var acc = 0;
     var best = 0;
     var bestD2 = Infinity;
+    var bestPoint = { x: path[0].x, y: path[0].y };
     for (var i = 1; i < path.length; i++) {
       var a = path[i - 1];
       var b = path[i];
@@ -145,10 +156,19 @@
       if (d2 < bestD2) {
         bestD2 = d2;
         best = acc + len * t;
+        bestPoint = { x: px, y: py };
       }
       acc += len;
     }
-    return best;
+    return { dist: best, d2: bestD2, point: bestPoint };
+  }
+
+  // La distancia (px desde el principio de la ruta) del punto de la ruta más
+  // cercano a (x, y). Sirve para saber por dónde va el gato cuando el
+  // servidor manda una ruta con la posición actual.
+  function distanceAlongPath(path, x, y) {
+    var near = nearestOnPath(path, x, y);
+    return near ? near.dist : 0;
   }
 
   function copyRoom(r) {
@@ -461,24 +481,46 @@
     if (rec.ctrl) rec.ctrl.play('idle');
   }
 
+  // De dónde sigue el gato la ruta que llega del servidor. Lo normal es que el
+  // gato siga desde donde está DIBUJADO (su posición renderizada): así, al
+  // llegar la ruta, el gato continúa donde está y nunca aparece de golpe en
+  // el destino (docs/mundo.md §3). Solo si el gato dibujado está sobre la
+  // ruta y va en tune con el servidor; si el cliente está desfasado (una
+  // pestaña en segundo plano, un mensaje perdido) manda el servidor.
+  function salidaDeRuta(ruta, rec, sx, sy) {
+    var delServidor = distanceAlongPath(ruta, sx, sy);
+    if (rec.el && rec.rx != null && rec.ry != null) {
+      var cerca = nearestOnPath(ruta, rec.rx, rec.ry);
+      if (cerca && cerca.d2 <= ON_ROUTE * ON_ROUTE &&
+          Math.abs(cerca.dist - delServidor) <= MAX_DESFASE) {
+        return { dist: cerca.dist, punto: cerca.point };
+      }
+    }
+    return { dist: delServidor, punto: pointAlongPath(ruta, delServidor) };
+  }
+
   // Prepara la caminata de un gato: la ruta que manda el servidor y el punto
   // de la ruta en el que está ahora. El gato avanza por la ruta a WALK_SPEED
   // (la misma velocidad que el servidor), así que la posición se deriva de la
-  // ruta igual que en el servidor (docs/mundo.md §3).
+  // ruta igual que en el servidor (docs/mundo.md §3). La misma lógica sirve
+  // para el gato propio y para los demás: al recibir `world:moved` con su
+  // ruta, el gato sigue desde donde está dibujado, a 60 px lógicos por
+  // segundo, con `walk` mientras camina y `idle` al llegar.
   function setWalk(rec, path, x, y) {
     var ruta = copyPoints(path);
     rec.path = ruta.length ? ruta : null;
-    rec.x = num(x, rec.x);
-    rec.y = num(y, rec.y);
+    var sx = num(x, rec.x);
+    var sy = num(y, rec.y);
 
     // Sin ruta no hay caminata: el gato se queda donde está.
     if (ruta.length < 2) {
-      restAt(rec, rec.x, rec.y);
+      restAt(rec, sx, sy);
       return;
     }
 
     var total = pathLength(ruta);
-    var dist = distanceAlongPath(ruta, rec.x, rec.y);
+    var salida = salidaDeRuta(ruta, rec, sx, sy);
+    var dist = salida.dist;
     var last = ruta[ruta.length - 1];
 
     // Ya está en el final de la ruta: no camina.
@@ -488,11 +530,13 @@
     }
 
     // El ancla es el punto de la ruta donde está el gato ahora.
-    var ancla = pointAlongPath(ruta, dist);
+    var ancla = salida.punto;
     rec.walk = { path: ruta, dist: dist, t0: now() };
     // Mientras camina: el destino es el final de la ruta y la animación es walk.
     rec.target = { x: last.x, y: last.y };
     rec.anim = 'walk';
+    rec.x = ancla.x;
+    rec.y = ancla.y;
     rec.rx = ancla.x;
     rec.ry = ancla.y;
     place(rec);
