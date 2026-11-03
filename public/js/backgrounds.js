@@ -24,6 +24,8 @@
 
   function has(id) { return !!scenes[id]; }
   function resolve(id) { return scenes[id] ? id : (scenes[DEFAULT] ? DEFAULT : order[0]); }
+  // La escena completa (con sus datos, por ejemplo los rectángulos sólidos de una sala).
+  function get(id) { return scenes[id] || null; }
 
   function paint(canvas, id, t) {
     var s = scenes[resolve(id)];
@@ -110,6 +112,7 @@
     list: list,
     has: has,
     resolve: resolve,
+    get: get,
     DEFAULT: DEFAULT,
     paint: paint,
     mount: mount,
