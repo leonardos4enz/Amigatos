@@ -61,7 +61,7 @@ test('las salidas de la sala son botones que llevan al gato a otra sala', async 
 
   // 2. Las salidas de la lista son botones con el nombre de la sala de destino.
   const exits = page.locator('#world-exits button');
-  await expect(exits).toHaveCount(2);
+  await expect(exits).toHaveCount(3);
   const cafe = page.locator('#world-exits button', { hasText: 'Café del Ovillo' });
   await expect(cafe).toHaveCount(1);
   await expect(cafe).toHaveText('Café del Ovillo');

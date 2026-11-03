@@ -170,11 +170,25 @@ el cliente solo dibuja lo que recibe. El catálogo de salas y las reglas de movi
 `server/world.js` (fuente única de la geometría); el cliente copia ese mismo catálogo para dibujar.
 
 ### Salas
-| id | nombre | bg | tamaño (ancho×alto) | spawn | salidas |
-|---|---|---|---|---|---|
-| `plaza` | Plaza Bigotes | `plaza` | 320×200 | (100, 180) | → `parque` en x 0–15, y 130–169 (llega en 290, 180) · → `cafe` en x 304–319, y 130–169 (llega en 30, 180) |
-| `parque` | Parque Ronroneo | `parque` | 320×200 | (240, 180) | → `plaza` en x 304–319, y 130–169 (llega en 30, 180) |
-| `cafe` | Café del Ovillo | `cafe` | 320×200 | (200, 180) | → `plaza` en x 0–15, y 130–169 (llega en 290, 180) |
+| id | nombre | bg | exterior | tamaño (ancho×alto) | spawn | salidas |
+|---|---|---|---|---|---|---|
+| `plaza` | Plaza Bigotes | `plaza` | sí | 320×200 | (100, 180) | → `parque` en x 0–15, y 130–169 (llega en 290, 180) · → `cafe` en x 304–319, y 130–169 (llega en 30, 180) · → `muelle` en x 60–75, y 184–199 (llega en 160, 30) |
+| `parque` | Parque Ronroneo | `parque` | sí | 320×200 | (240, 180) | → `plaza` en x 304–319, y 130–169 (llega en 30, 180) |
+| `cafe` | Café del Ovillo | `cafe` | no | 320×200 | (200, 180) | → `plaza` en x 0–15, y 130–169 (llega en 290, 180) |
+| `muelle` | Muelle de las Sardinas | `muelle` | sí | 320×200 | (160, 180) | → `plaza` en x 152–167, y 0–15 (llega en 67, 175) · → `mercado` en x 304–319, y 130–169 (llega en 30, 180) |
+| `mercado` | Mercado del Cascabel | `mercado` | sí | 320×200 | (240, 180) | → `muelle` en x 0–15, y 130–169 (llega en 290, 180) · → `faro` en x 304–319, y 130–169 (llega en 30, 180) |
+| `faro` | Colina del Faro | `faro` | sí | 320×200 | (260, 180) | → `mercado` en x 0–15, y 130–169 (llega en 290, 180) |
+
+El campo `exterior` dice si la sala es de fuera (aparece en el mapa del pueblo) o
+interior (solo se llega por sus puertas): exteriores son `plaza`, `parque`, `muelle`,
+`mercado` y `faro`; solo `cafe` es interior.
+
+El pueblo es una cadena: `plaza` ↔ `muelle` ↔ `mercado` ↔ `faro` (y `plaza` ↔
+`parque`, `plaza` ↔ `cafe`).
+
+Mientras no exista el arte de `muelle`, `mercado` y `faro` (#43, #45, #46), el
+cliente pinta el fondo por defecto de `CatBG`: no hay que tocar el cliente para
+que las salas nuevas se puedan entrar.
 
 Coordenadas lógicas enteras: x 0..width, y 0..height (320×200). El rectángulo de una salida cubre
 x..x+w-1, y..y+h-1. El room de Socket.IO de una sala es `world:<roomId>`.
