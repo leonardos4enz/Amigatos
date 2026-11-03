@@ -138,14 +138,19 @@ Cada juego nuevo vive en **dos archivos propios** y no toca nada más:
 
 ## Fondos personalizados (añadido v3)
 - `cat.bg`: id de escena de fondo (string). Desconocido o ausente → `CatBG.DEFAULT` ("cuarto").
-- Núcleo `public/js/backgrounds.js` (window.CatBG): `register({id,label,emoji,animated,draw(ctx,w,h,t)})`,
-  `list()`, `has(id)`, `resolve(id)`, `mount(container, id, {base}) → {set(id), destroy()}`, `toDataURL(id, w, h)`.
+- Núcleo `public/js/backgrounds.js` (window.CatBG): `register({id,label,emoji,animated,draw(ctx,w,h,t),solids})`,
+  `list()`, `has(id)`, `resolve(id)`, `solids(id) → [{x, y, w, h}]`, `mount(container, id, {base}) → {set(id), destroy()}`,
+  `toDataURL(id, w, h)`.
   `draw` pinta en pixeles lógicos (≈96×72, pero el alto varía con el contenedor: dibujar adaptándose a `w`,`h`).
   Animadas a 8 fps; `t` en segundos.
+  `solids` es opcional: la escena declara sus objetos sólidos (agua, puestos, rocas, muros) como
+  rectángulos `{x, y, w, h}` en píxeles lógicos (cubren x..x+w-1 e y..y+h-1). Ninguno puede pisar el
+  suelo caminable que define el servidor: los tests lo comprueban contra `server/world.js`.
 - Escenas en `public/js/bg/indoor.js` y `public/js/bg/outdoor.js`.
 - Escenas del mundo, una por archivo en `public/js/bg/rooms/`: `plaza.js` (Plaza Bigotes),
-  `parque.js` (Parque Ronroneo) y `cafe.js` (Café del Ovillo). Son las tres salas del mapa 2D
-  (ver "El mundo (fase 1)"). Las utilidades de dibujo compartidas están en `public/js/bg/pixels.js`
+  `parque.js` (Parque Ronroneo), `cafe.js` (Café del Ovillo) y `faro.js` (Colina del Faro). Son las
+  salas del mapa 2D que ya tienen arte (ver "El mundo (fase 1)"). Las utilidades de dibujo compartidas
+  están en `public/js/bg/pixels.js`
   (`window.CatBGPixels`): cada escena declara su ancho nativo (`NATIVE_W`) y el envoltorio la escala
   a la base pedida sin suavizado (`imageSmoothingEnabled = false`).
 
@@ -188,7 +193,7 @@ interior (solo se llega por sus puertas): exteriores son `plaza`, `parque`, `mue
 El pueblo es una cadena: `plaza` ↔ `muelle` ↔ `mercado` ↔ `faro` (y `plaza` ↔
 `parque`, `plaza` ↔ `cafe`).
 
-Mientras no exista el arte de `muelle`, `mercado` y `faro` (#43, #45, #46), el
+Mientras no exista el arte de `muelle` y `mercado` (#43, #45), el
 cliente pinta el fondo por defecto de `CatBG`: no hay que tocar el cliente para
 que las salas nuevas se puedan entrar.
 

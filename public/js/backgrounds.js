@@ -25,6 +25,18 @@
   function has(id) { return !!scenes[id]; }
   function resolve(id) { return scenes[id] ? id : (scenes[DEFAULT] ? DEFAULT : order[0]); }
 
+  // Los objetos sólidos de una escena: rectángulos {x, y, w, h} en píxeles lógicos
+  // (cubren x..x+w-1 e y..y+h-1) que la escena declara como obstáculos. Las escenas
+  // del mundo los declaran en `solids`: los tests comprueban que no pisan el suelo
+  // caminable que define el servidor.
+  function solids(id) {
+    var s = scenes[resolve(id)];
+    if (!s || !Array.isArray(s.solids)) return [];
+    return s.solids.map(function (r) {
+      return { x: r.x, y: r.y, w: r.w, h: r.h };
+    });
+  }
+
   function paint(canvas, id, t) {
     var s = scenes[resolve(id)];
     if (!s) return;
@@ -110,6 +122,7 @@
     list: list,
     has: has,
     resolve: resolve,
+    solids: solids,
     DEFAULT: DEFAULT,
     paint: paint,
     mount: mount,
