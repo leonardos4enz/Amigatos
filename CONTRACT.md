@@ -139,15 +139,26 @@ Cada juego nuevo vive en **dos archivos propios** y no toca nada más:
 ## Fondos personalizados (añadido v3)
 - `cat.bg`: id de escena de fondo (string). Desconocido o ausente → `CatBG.DEFAULT` ("cuarto").
 - Núcleo `public/js/backgrounds.js` (window.CatBG): `register({id,label,emoji,animated,draw(ctx,w,h,t)})`,
-  `list()`, `has(id)`, `resolve(id)`, `mount(container, id, {base}) → {set(id), destroy()}`, `toDataURL(id, w, h)`.
+  `list()`, `has(id)`, `resolve(id)`, `solids(id)`, `get(id)` (la escena entera, con sus datos: por
+  ejemplo `solids`), `mount(container, id, {base}) → {set(id), destroy()}`,
+  `toDataURL(id, w, h)`.
   `draw` pinta en pixeles lógicos (≈96×72, pero el alto varía con el contenedor: dibujar adaptándose a `w`,`h`).
   Animadas a 8 fps; `t` en segundos.
+- Una escena puede declarar `solids: [{x, y, w, h}]`: los objetos que ocupa y que no se pueden pisar
+  (los puestos del mercado, por ejemplo). `CatBG.solids(id)` devuelve esa lista (vacía si la escena
+  no declara ninguno).
 - Escenas en `public/js/bg/indoor.js` y `public/js/bg/outdoor.js`.
 - Escenas del mundo, una por archivo en `public/js/bg/rooms/`: `plaza.js` (Plaza Bigotes),
-  `parque.js` (Parque Ronroneo) y `cafe.js` (Café del Ovillo). Son las tres salas del mapa 2D
-  (ver "El mundo (fase 1)"). Las utilidades de dibujo compartidas están en `public/js/bg/pixels.js`
-  (`window.CatBGPixels`): cada escena declara su ancho nativo (`NATIVE_W`) y el envoltorio la escala
-  a la base pedida sin suavizado (`imageSmoothingEnabled = false`).
+  `parque.js` (Parque Ronroneo), `cafe.js` (Café del Ovillo), `mercado.js` (Mercado del Cascabel) y
+  `muelle.js` (Muelle de las Sardinas).
+  Son las salas del mapa 2D que ya tienen arte (ver "El mundo (fase 1)"). Las utilidades de dibujo
+  compartidas están en `public/js/bg/pixels.js` (`window.CatBGPixels`): cada escena declara su ancho
+  nativo (`NATIVE_W`) y el envoltorio la escala a la base pedida sin suavizado
+  (`imageSmoothingEnabled = false`).
+- Las escenas de una sala del mundo pueden exportar `solids`: la lista de rectángulos (`{id,x,y,w,h}`)
+  de los objetos sólidos que no se pueden pisar. Ninguno puede cruzar los polígonos `walkable` de la
+  sala (ver `public/js/bg/rooms/mercado.js` y `public/js/bg/rooms/muelle.js` y sus tests
+  `e2e/fondo-mercado.spec.js` y `e2e/fondo-muelle.spec.js`).
 
 ## Amigos (añadido v3)
 Amistad **mutua e inmediata** (sin solicitudes): al agregar se guardan ambas direcciones en
@@ -188,9 +199,12 @@ interior (solo se llega por sus puertas): exteriores son `plaza`, `parque`, `mue
 El pueblo es una cadena: `plaza` ↔ `muelle` ↔ `mercado` ↔ `faro` (y `plaza` ↔
 `parque`, `plaza` ↔ `cafe`).
 
-Mientras no exista el arte de `muelle`, `mercado` y `faro` (#43, #45, #46), el
-cliente pinta el fondo por defecto de `CatBG`: no hay que tocar el cliente para
-que las salas nuevas se puedan entrar.
+Mientras no exista el arte de `faro` (#46), el cliente pinta el fondo por
+defecto de `CatBG`: no hay que tocar el cliente para que las salas nuevas se puedan entrar.
+El arte de `mercado` sí existe (`public/js/bg/rooms/mercado.js`): el empedrado caminable empieza
+en y=110 y el puesto central (x 120..200, y 150..200) no se pisa.
+El arte de `muelle` también existe (`public/js/bg/rooms/muelle.js`): el mar, la barca, la balsa
+y las rocas no se pisan.
 
 Coordenadas lógicas enteras: x 0..width, y 0..height (320×200). El rectángulo de una salida cubre
 x..x+w-1, y..y+h-1. El room de Socket.IO de una sala es `world:<roomId>`.
@@ -270,6 +284,11 @@ La ruta no puede cortar esquinas ni atravesar obstáculos:
   primero de la sala anterior (los demás reciben `world:left`) y luego entra en la nueva.
 - `world:move` `{ x, y }` — pide mover el gato a un punto (coordenadas lógicas enteras). El servidor lo
   ajusta al punto caminable más cercano, calcula la ruta y decide el destino.
+- `world:travel` `{ room }` — viaja a una sala exterior del mapa del pueblo. El servidor valida que la
+  sala exista **y** sea exterior (`exterior: true`); si no, responde `error:msg` con
+  `"Ese lugar no se puede viajar."`. Si es válida, el gato entra en esa sala en su `spawn` (igual que
+  con `world:enter`): los demás de la sala de origen reciben `world:left` y los de la de destino
+  `world:join`.
 - `world:leave` — sale del mundo (vuelve al lobby).
 
 ### Servidor → cliente
@@ -309,6 +328,9 @@ La ruta no puede cortar esquinas ni atravesar obstáculos:
   puerta y cruza al llegar.
 - Frecuencia: máximo **12 movimientos por persona cada 1000 ms** (ventana deslizante). Al pasarse, el gato
   no se mueve y se manda `error:msg` con `"Te mueves muy rápido."`.
+- Viajar (`world:travel`) usa la **misma ventana deslizante** que los movimientos: como mucho 12 viajes
+  por persona cada 1000 ms, y al pasarse se manda `error:msg` con `"Te mueves muy rápido."`. Un viaje
+  rechazado (sala que no existe o que no es exterior) no gasta oportunidades.
 - Varias pestañas: todas entran y salen de la sala juntas y todas reciben el `world:state`.
 - `world:leave` y la desconexión (última pestaña cerrada) sacan al gato del mundo y los demás de la sala
   reciben `world:left` `{id}`.
@@ -321,6 +343,7 @@ La ruta no puede cortar esquinas ni atravesar obstáculos:
 | `No puedes salir de la sala.` | `world:move` con una posición fuera de 0..width / 0..height |
 | `No se puede llegar hasta ahí.` | `world:move` a un punto sin ruta posible (el gato no se mueve) |
 | `Te mueves muy rápido.` | más de 12 movimientos en 1000 ms |
+| `Ese lugar no se puede viajar.` | `world:travel` a una sala que no existe o que no es exterior |
 | `Primero entra al mundo.` | `world:move` sin estar en el mundo |
 
 ### Escala del escenario (cliente)

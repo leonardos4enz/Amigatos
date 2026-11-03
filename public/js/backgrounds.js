@@ -24,6 +24,19 @@
 
   function has(id) { return !!scenes[id]; }
   function resolve(id) { return scenes[id] ? id : (scenes[DEFAULT] ? DEFAULT : order[0]); }
+  // La escena completa (con sus datos, por ejemplo los rectángulos sólidos de una sala).
+  function get(id) { return scenes[id] || null; }
+
+  // Los objetos sólidos de una escena: rectángulos {x, y, w, h} en coordenadas lógicas
+  // con lo que la escena ocupa y que no se puede pisar (los puestos del mercado, por
+  // ejemplo). Las escenas del mundo los declaran al registrarse; el resto no tiene.
+  function solids(id) {
+    var s = scenes[resolve(id)];
+    if (!s || !Array.isArray(s.solids)) return [];
+    return s.solids.map(function (r) {
+      return { x: r.x, y: r.y, w: r.w, h: r.h };
+    });
+  }
 
   function paint(canvas, id, t) {
     var s = scenes[resolve(id)];
@@ -110,6 +123,8 @@
     list: list,
     has: has,
     resolve: resolve,
+    solids: solids,
+    get: get,
     DEFAULT: DEFAULT,
     paint: paint,
     mount: mount,
