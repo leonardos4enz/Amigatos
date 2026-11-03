@@ -370,6 +370,13 @@ llega al final de la ruta se queda ahí y vuelve a la animación `idle`; mientra
 `walk`. La caminata es de **velocidad constante**: sin aceleración ni frenado, así que el tiempo que
 tarda el gato en llegar es la distancia de la ruta dividida por `SPEED`.
 
+La caminata es la misma para **el gato propio y para los demás**: al recibir `world:moved` (o
+`world:state`) con la ruta de un gato, el cliente lo pone a caminar **desde su posición renderizada
+actual** (la que está dibujada en ese momento), no desde la posición que dice el servidor: así el gato
+continúa donde está y **nunca aparece de golpe en el destino**. Si el gato dibujado no está sobre la
+ruta (el cliente se ha desfasado: una pestaña en segundo plano o un mensaje perdido), entonces manda el
+servidor y el gato se coloca en la posición que dice el servidor.
+
 El `facing` que manda el servidor es el sentido en el que camina el gato (`'left'` o `'right'`). El
 cliente lo publica en `window.__amigatos` y además **voltea el sprite** con `CatArt.setFlip()`
 (cuando el gato mira a la izquierda, el sprite sale espejado). Mientras el gato recorre la ruta, el
