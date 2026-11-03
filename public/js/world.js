@@ -38,9 +38,7 @@
   var stage = null;       // elemento donde se monta la pantalla del mundo
   var bgCtrl = null;      // controlador de CatBG (fondo)
   var bgBase = 0;         // base lógica con la que está pintado el fondo
-  var layer = null;       // capa de gatos
-  var layerOthers = null; // los gatos de los demás
-  var layerMe = null;     // el gato propio
+  var layer = null;       // capa de gatos (todos, ordenados por profundidad)
   var layerExits = null;  // capa de las puertas (salidas visibles)
   var moveHandler = null; // fn(x, y) que avisa del clic en el piso
   var rafId = null;       // bucle de interpolación
@@ -209,6 +207,47 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Orientación y profundidad                                            */
+  /* ------------------------------------------------------------------ */
+
+  // Orientación del gato: 'left' o 'right' (docs/mundo.md §3). El sprite se
+  // voltea cuando el gato mira a la izquierda.
+  function setFacing(rec, facing) {
+    if (facing !== 'left' && facing !== 'right') return;
+    rec.facing = facing;
+    applyFacing(rec);
+  }
+
+  // Voltea el sprite del gato si su orientación cambia.
+  function applyFacing(rec) {
+    var flip = rec.facing === 'left';
+    if (rec.flipped === flip) return;
+    rec.flipped = flip;
+    // La orientación también queda en el DOM (para las pruebas sin pantalla).
+    if (rec.el) rec.el.setAttribute('data-facing', rec.facing);
+    if (rec.ctrl) rec.ctrl.setFlip(flip);
+  }
+
+  // Orientación a partir del avance horizontal: el gato mira hacia donde
+  // camina (docs/mundo.md §3). El avance sale de interpolar la ruta, así que
+  // su signo es el del tramo que se está recorriendo: cualquier avance
+  // horizontal decide el sentido (no hace falta un umbral, que retrasaría el
+  // cambio). Si el gato camina en vertical no hay avance horizontal y se
+  // mantiene la orientación anterior.
+  function facingFromStep(dx, previous) {
+    var d = num(dx, 0);
+    if (d > 0) return 'right';
+    if (d < 0) return 'left';
+    return previous === 'left' ? 'left' : 'right';
+  }
+
+  // Profundidad: los gatos se ordenan por `y` y el de mayor `y` se dibuja
+  // encima (docs/mundo.md §3). El z-index sale directamente de la `y`.
+  function depthZ(y) {
+    return Math.round(num(y, 0));
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Escala entera del escenario                                          */
   /* ------------------------------------------------------------------ */
 
@@ -282,12 +321,12 @@
         rec.cat = d.cat;
         rec.isMe = d.isMe;
         rec.target = d.target || null;
-        rec.facing = d.facing || rec.facing;
+        setFacing(rec, d.facing || rec.facing);
         next.push(rec);
         if (rec.el) {
-          // el gato propio se dibuja aparte de los demás
-          var parent = rec.isMe ? layerMe : layerOthers;
-          if (parent && rec.el.parentNode !== parent) parent.appendChild(rec.el);
+          // Todos los gatos viven en la misma capa: el orden de pintado lo
+          // decide el `z-index` de cada uno (su `y`), no el orden en el DOM.
+          if (layer && rec.el.parentNode !== layer) layer.appendChild(rec.el);
           if (rec.label) rec.label.textContent = rec.username;
           if (rec.ctrl && rec.cat) rec.ctrl.setCat(rec.cat);
         }
@@ -302,6 +341,7 @@
           y: d.y,
           target: d.target || null,
           facing: d.facing || 'right',
+          flipped: undefined,
           path: d.path || null,
           isMe: d.isMe,
           el: null,
@@ -316,6 +356,7 @@
         byId[key] = rec;
         next.push(rec);
         createCatEl(rec);
+        applyFacing(rec);
         setWalk(rec, d.path, d.x, d.y);
       }
     }
@@ -345,6 +386,7 @@
     var el = document.createElement('div');
     el.className = 'world-cat';
     el.setAttribute('data-player-id', String(rec.id));
+    el.setAttribute('data-facing', rec.facing);
 
     var canvas = document.createElement('canvas');
     canvas.className = 'world-cat-canvas';
@@ -370,11 +412,13 @@
     rec.ry = rec.y;
 
     if (window.CatArt) {
-      rec.ctrl = window.CatArt.mount(canvas, rec.cat || window.CatArt.defaultCat(), { scale: 1, anim: 'idle' });
+      // El sprite nace con la orientación del gato (izquierda = volteado).
+      rec.flipped = rec.facing === 'left';
+      rec.ctrl = window.CatArt.mount(canvas, rec.cat || window.CatArt.defaultCat(),
+        { scale: 1, anim: 'idle', flip: rec.flipped });
     }
 
-    var parent = rec.isMe ? layerMe : layerOthers;
-    if (parent) parent.appendChild(el);
+    if (layer) layer.appendChild(el);
     place(rec);
   }
 
@@ -395,6 +439,8 @@
     rec.el.style.left = (rec.rx / w * 100) + '%';
     rec.el.style.top = (rec.ry / h * 100) + '%';
     rec.el.style.transform = 'translate(-50%,-50%)';
+    // Profundidad: el gato con mayor `y` se dibuja encima (docs/mundo.md §3).
+    rec.el.style.zIndex = String(depthZ(rec.ry));
   }
 
   /* ------------------------------------------------------------------ */
@@ -481,6 +527,8 @@
         p = pointAlongPath(w.path, dist);
         more = true;
       }
+      // Orientación: el gato mira hacia donde camina (docs/mundo.md §3).
+      setFacing(rec, facingFromStep(p.x - rec.x, rec.facing));
       rec.x = p.x;
       rec.y = p.y;
       rec.rx = p.x;
@@ -574,16 +622,6 @@
     layer.className = 'world-layer';
     layer.style.cssText = 'position:absolute;inset:0;z-index:1;pointer-events:none;';
 
-    layerOthers = document.createElement('div');
-    layerOthers.className = 'world-others';
-    layerOthers.style.cssText = 'position:absolute;inset:0;';
-
-    layerMe = document.createElement('div');
-    layerMe.className = 'world-me';
-    layerMe.style.cssText = 'position:absolute;inset:0;';
-
-    layer.appendChild(layerOthers);
-    layer.appendChild(layerMe);
     stage.appendChild(layer);
 
     Object.keys(byId).forEach(function (key) {
@@ -638,8 +676,6 @@
     if (bgCtrl) { bgCtrl.destroy(); bgCtrl = null; }
     if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
     layer = null;
-    layerOthers = null;
-    layerMe = null;
 
     if (layerExits && layerExits.parentNode) layerExits.parentNode.removeChild(layerExits);
     layerExits = null;
@@ -755,7 +791,7 @@
     if (payload.target && typeof payload.target === 'object') {
       rec.target = { x: num(payload.target.x, rec.x), y: num(payload.target.y, rec.y) };
     }
-    if (payload.facing === 'left' || payload.facing === 'right') rec.facing = payload.facing;
+    if (payload.facing === 'left' || payload.facing === 'right') setFacing(rec, payload.facing);
     // El servidor manda la ruta que sigue el gato: el cliente la recorre a la
     // misma velocidad que el servidor (60 px lógicos por segundo).
     setWalk(rec, payload.path, payload.x, payload.y);
@@ -812,7 +848,7 @@
     };
   }
 
-  window.WorldUI = {
+  var api = {
     mount: mount,
     unmount: unmount,
     setMoveHandler: setMoveHandler,
@@ -820,6 +856,14 @@
     applyJoin: applyJoin,
     applyLeft: applyLeft,
     applyMoved: applyMoved,
-    state: state
+    state: state,
+    // Orientación (puro): qué mira el gato según su avance horizontal.
+    facingFromStep: facingFromStep,
+    // Profundidad (puro): el z-index de un gato sale de su `y`.
+    depthZ: depthZ
   };
+
+  if (typeof window !== 'undefined') window.WorldUI = api;
+  // Las funciones puras se pueden probar en Node (sin navegador).
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

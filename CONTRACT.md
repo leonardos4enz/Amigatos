@@ -100,6 +100,8 @@ Conexión: `io({ auth: { token } })`. Si el token es inválido, el server rechaz
 - `CatArt.defaultCat()` → Cat
 - `CatArt.mount(canvas, cat, opts)` → controller animado. `opts = { scale: 4, anim: "idle", flip: false }`
   - controller: `.setCat(cat)`, `.play(anim)` con anim `"idle"|"happy"|"sad"|"sleep"|"walk"`, `.destroy()`
+  - controller: `.setFlip(flip)` → voltea el sprite en caliente (`true` = el gato mira a la izquierda).
+    No cambia el resto de la API.
   - `happy`/`sad` duran ~1.5 s y vuelven a `idle`.
   - el canvas se dimensiona solo (sprite 32x32 px × scale), `image-rendering: pixelated`.
 - `CatArt.toDataURL(cat, scale=4)` → PNG estático (para avatares en listas/chat).
@@ -368,5 +370,18 @@ llega al final de la ruta se queda ahí y vuelve a la animación `idle`; mientra
 `walk`. La caminata es de **velocidad constante**: sin aceleración ni frenado, así que el tiempo que
 tarda el gato en llegar es la distancia de la ruta dividida por `SPEED`.
 
-El `facing` que manda el servidor es el sentido en el que camina el gato (`'left'` o `'right'`); el
-cliente lo publica en `window.__amigatos`, pero voltear el sprite es cosa de la tarea de animación.
+El `facing` que manda el servidor es el sentido en el que camina el gato (`'left'` o `'right'`). El
+cliente lo publica en `window.__amigatos` y además **voltea el sprite** con `CatArt.setFlip()`
+(cuando el gato mira a la izquierda, el sprite sale espejado). Mientras el gato recorre la ruta, el
+cliente calcula la orientación con su propio avance horizontal (`WorldUI.facingFromStep(dx, previo)`):
+si el avance es horizontal, el signo del avance decide el sentido (cualquier avance, por pequeño que
+sea); si el gato camina en vertical (avance horizontal cero) se mantiene la orientación anterior. Así
+`me.facing` refleja el sentido en el que el gato está caminando ahora mismo, incluso si el camino da
+media vuelta. La orientación de cada gato también está en el DOM: `data-facing` en `.world-cat`.
+
+### Profundidad de los gatos
+Los gatos se ordenan por su `y` (docs/mundo.md §3): el `z-index` de cada gato es su `y` redondeado
+(`WorldUI.depthZ(y)`), así que **el gato con mayor `y` se dibuja encima** del que tiene menor `y`.
+Todos los gatos (el propio y los de los demás) viven en la **misma capa** (`.world-layer`), para que
+sus `z-index` se comparen entre sí y el orden de pintado lo decida la profundidad y no el orden en el
+DOM.
