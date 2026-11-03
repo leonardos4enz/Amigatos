@@ -139,19 +139,26 @@ Cada juego nuevo vive en **dos archivos propios** y no toca nada más:
 ## Fondos personalizados (añadido v3)
 - `cat.bg`: id de escena de fondo (string). Desconocido o ausente → `CatBG.DEFAULT` ("cuarto").
 - Núcleo `public/js/backgrounds.js` (window.CatBG): `register({id,label,emoji,animated,draw(ctx,w,h,t)})`,
-  `list()`, `has(id)`, `resolve(id)`, `get(id)` (la escena entera, con sus datos: por ejemplo `solids`),
-  `mount(container, id, {base}) → {set(id), destroy()}`, `toDataURL(id, w, h)`.
+  `list()`, `has(id)`, `resolve(id)`, `solids(id)`, `get(id)` (la escena entera, con sus datos: por
+  ejemplo `solids`), `mount(container, id, {base}) → {set(id), destroy()}`,
+  `toDataURL(id, w, h)`.
   `draw` pinta en pixeles lógicos (≈96×72, pero el alto varía con el contenedor: dibujar adaptándose a `w`,`h`).
   Animadas a 8 fps; `t` en segundos.
+- Una escena puede declarar `solids: [{x, y, w, h}]`: los objetos que ocupa y que no se pueden pisar
+  (los puestos del mercado, por ejemplo). `CatBG.solids(id)` devuelve esa lista (vacía si la escena
+  no declara ninguno).
 - Escenas en `public/js/bg/indoor.js` y `public/js/bg/outdoor.js`.
 - Escenas del mundo, una por archivo en `public/js/bg/rooms/`: `plaza.js` (Plaza Bigotes),
-  `parque.js` (Parque Ronroneo), `cafe.js` (Café del Ovillo) y `muelle.js` (Muelle de las Sardinas).
-  Son las salas del mapa 2D (ver "El mundo (fase 1)"). Las utilidades de dibujo compartidas están en
-  `public/js/bg/pixels.js` (`window.CatBGPixels`): cada escena declara su ancho nativo (`NATIVE_W`) y el
-  envoltorio la escala a la base pedida sin suavizado (`imageSmoothingEnabled = false`).
+  `parque.js` (Parque Ronroneo), `cafe.js` (Café del Ovillo), `mercado.js` (Mercado del Cascabel) y
+  `muelle.js` (Muelle de las Sardinas).
+  Son las salas del mapa 2D que ya tienen arte (ver "El mundo (fase 1)"). Las utilidades de dibujo
+  compartidas están en `public/js/bg/pixels.js` (`window.CatBGPixels`): cada escena declara su ancho
+  nativo (`NATIVE_W`) y el envoltorio la escala a la base pedida sin suavizado
+  (`imageSmoothingEnabled = false`).
 - Las escenas de una sala del mundo pueden exportar `solids`: la lista de rectángulos (`{id,x,y,w,h}`)
   de los objetos sólidos que no se pueden pisar. Ninguno puede cruzar los polígonos `walkable` de la
-  sala (ver `public/js/bg/rooms/muelle.js` y su test `e2e/fondo-muelle.spec.js`).
+  sala (ver `public/js/bg/rooms/mercado.js` y `public/js/bg/rooms/muelle.js` y sus tests
+  `e2e/fondo-mercado.spec.js` y `e2e/fondo-muelle.spec.js`).
 
 ## Amigos (añadido v3)
 Amistad **mutua e inmediata** (sin solicitudes): al agregar se guardan ambas direcciones en
@@ -192,9 +199,12 @@ interior (solo se llega por sus puertas): exteriores son `plaza`, `parque`, `mue
 El pueblo es una cadena: `plaza` ↔ `muelle` ↔ `mercado` ↔ `faro` (y `plaza` ↔
 `parque`, `plaza` ↔ `cafe`).
 
-Mientras no exista el arte de `mercado` y `faro` (#45, #46), el
-cliente pinta el fondo por defecto de `CatBG`: no hay que tocar el cliente para
-que las salas nuevas se puedan entrar.
+Mientras no exista el arte de `faro` (#46), el cliente pinta el fondo por
+defecto de `CatBG`: no hay que tocar el cliente para que las salas nuevas se puedan entrar.
+El arte de `mercado` sí existe (`public/js/bg/rooms/mercado.js`): el empedrado caminable empieza
+en y=110 y el puesto central (x 120..200, y 150..200) no se pisa.
+El arte de `muelle` también existe (`public/js/bg/rooms/muelle.js`): el mar, la barca, la balsa
+y las rocas no se pisan.
 
 Coordenadas lógicas enteras: x 0..width, y 0..height (320×200). El rectángulo de una salida cubre
 x..x+w-1, y..y+h-1. El room de Socket.IO de una sala es `world:<roomId>`.
