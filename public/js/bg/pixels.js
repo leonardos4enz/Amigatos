@@ -95,6 +95,17 @@
     R(c, col, x, y + 1, 5, 1); R(c, col, x + 1, y + 2, 3, 1); P(c, col, x + 2, y + 3);
   }
   function groundY(H) { return H - clamp(Math.round(H * 0.3), 10, 46); }
+  // mezcla dos colores hex (#rrggbb) con k=0 (a) .. 1 (b)
+  function mix(a, b, k) {
+    function p(h, i) { return parseInt(h.substr(i, 2), 16); }
+    function toHex(v) {
+      var s = Math.max(0, Math.min(255, Math.round(v))).toString(16);
+      return s.length < 2 ? '0' + s : s;
+    }
+    return '#' + toHex(p(a, 1) + (p(b, 1) - p(a, 1)) * k)
+      + toHex(p(a, 3) + (p(b, 3) - p(a, 3)) * k)
+      + toHex(p(a, 5) + (p(b, 5) - p(a, 5)) * k);
+  }
 
   /* ------------------------------------------------------------------ */
   /* capas estaticas en cache (por escena y tamano)                    */
@@ -160,6 +171,7 @@
     star5: star5,
     heart5: heart5,
     groundY: groundY,
+    mix: mix,
     layer: layer,
     scaled: scaled
   };
