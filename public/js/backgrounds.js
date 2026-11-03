@@ -24,11 +24,14 @@
 
   function has(id) { return !!scenes[id]; }
   function resolve(id) { return scenes[id] ? id : (scenes[DEFAULT] ? DEFAULT : order[0]); }
+  // La escena completa (con sus datos, por ejemplo los rectángulos sólidos de una sala).
+  function get(id) { return scenes[id] || null; }
 
   // Los objetos sólidos de una escena: rectángulos {x, y, w, h} en píxeles lógicos
-  // (cubren x..x+w-1 e y..y+h-1) que la escena declara como obstáculos. Las escenas
-  // del mundo los declaran en `solids`: los tests comprueban que no pisan el suelo
-  // caminable que define el servidor.
+  // (cubren x..x+w-1 e y..y+h-1) que la escena declara como obstáculos (los puestos
+  // del mercado, el mar, la barca, el faro...). Las escenas del mundo los declaran
+  // al registrarse en `solids`; el resto no tiene. Los tests comprueban que no
+  // pisan el suelo caminable que define el servidor.
   function solids(id) {
     var s = scenes[resolve(id)];
     if (!s || !Array.isArray(s.solids)) return [];
@@ -123,6 +126,7 @@
     has: has,
     resolve: resolve,
     solids: solids,
+    get: get,
     DEFAULT: DEFAULT,
     paint: paint,
     mount: mount,
