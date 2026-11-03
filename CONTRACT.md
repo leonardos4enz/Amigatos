@@ -274,6 +274,11 @@ La ruta no puede cortar esquinas ni atravesar obstáculos:
   primero de la sala anterior (los demás reciben `world:left`) y luego entra en la nueva.
 - `world:move` `{ x, y }` — pide mover el gato a un punto (coordenadas lógicas enteras). El servidor lo
   ajusta al punto caminable más cercano, calcula la ruta y decide el destino.
+- `world:travel` `{ room }` — viaja a una sala exterior del mapa del pueblo. El servidor valida que la
+  sala exista **y** sea exterior (`exterior: true`); si no, responde `error:msg` con
+  `"Ese lugar no se puede viajar."`. Si es válida, el gato entra en esa sala en su `spawn` (igual que
+  con `world:enter`): los demás de la sala de origen reciben `world:left` y los de la de destino
+  `world:join`.
 - `world:leave` — sale del mundo (vuelve al lobby).
 
 ### Servidor → cliente
@@ -313,6 +318,9 @@ La ruta no puede cortar esquinas ni atravesar obstáculos:
   puerta y cruza al llegar.
 - Frecuencia: máximo **12 movimientos por persona cada 1000 ms** (ventana deslizante). Al pasarse, el gato
   no se mueve y se manda `error:msg` con `"Te mueves muy rápido."`.
+- Viajar (`world:travel`) usa la **misma ventana deslizante** que los movimientos: como mucho 12 viajes
+  por persona cada 1000 ms, y al pasarse se manda `error:msg` con `"Te mueves muy rápido."`. Un viaje
+  rechazado (sala que no existe o que no es exterior) no gasta oportunidades.
 - Varias pestañas: todas entran y salen de la sala juntas y todas reciben el `world:state`.
 - `world:leave` y la desconexión (última pestaña cerrada) sacan al gato del mundo y los demás de la sala
   reciben `world:left` `{id}`.
@@ -325,6 +333,7 @@ La ruta no puede cortar esquinas ni atravesar obstáculos:
 | `No puedes salir de la sala.` | `world:move` con una posición fuera de 0..width / 0..height |
 | `No se puede llegar hasta ahí.` | `world:move` a un punto sin ruta posible (el gato no se mueve) |
 | `Te mueves muy rápido.` | más de 12 movimientos en 1000 ms |
+| `Ese lugar no se puede viajar.` | `world:travel` a una sala que no existe o que no es exterior |
 | `Primero entra al mundo.` | `world:move` sin estar en el mundo |
 
 ### Escala del escenario (cliente)
