@@ -208,6 +208,54 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Orientación y profundidad                                            */
+  /* ------------------------------------------------------------------ */
+
+  // Orientación del gato: 'left' o 'right' (docs/mundo.md §3). El sprite se
+  // voltea cuando el gato mira a la izquierda.
+  function setFacing(rec, facing) {
+    if (facing !== 'left' && facing !== 'right') return;
+    rec.facing = facing;
+    applyFacing(rec);
+  }
+
+  // Voltea el sprite del gato si su orientación cambia.
+  function applyFacing(rec) {
+    var flip = rec.facing === 'left';
+    if (rec.flipped === flip) return;
+    rec.flipped = flip;
+    // La orientación también queda en el DOM (para las pruebas sin pantalla).
+    if (rec.el) rec.el.setAttribute('data-facing', rec.facing);
+    if (rec.ctrl) rec.ctrl.setFlip(flip);
+  }
+
+  // Orientación a partir del avance horizontal: el gato mira hacia donde
+  // camina (docs/mundo.md §3). El avance se acumula para no cambiar de
+  // sentido con cada píxel (y no hacerlo al caminar en vertical).
+  // Devuelve la orientación nueva y el avance acumulado que queda.
+  function facingFromStep(accX, dx, previous) {
+    var acc = num(accX, 0) + num(dx, 0);
+    if (acc > 1) return { facing: 'right', accX: 0 };
+    if (acc < -1) return { facing: 'left', accX: 0 };
+    return { facing: previous, accX: acc };
+  }
+
+  // Profundidad: los gatos se ordenan por `y` y el de mayor `y` se dibuja
+  // encima (docs/mundo.md §3). El z-index sale directamente de la `y`.
+  function depthZ(y) {
+    return Math.round(num(y, 0));
+  }
+
+  // Ordena una lista de gatos de arriba abajo (de menor `y` a mayor `y`): el
+  // que está más abajo en la pantalla se dibuja el último, encima de los demás.
+  function byDepth(list) {
+    if (!Array.isArray(list)) return [];
+    return list.slice().sort(function (a, b) {
+      return num(a && a.y, 0) - num(b && b.y, 0);
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Escala entera del escenario                                          */
   /* ------------------------------------------------------------------ */
 
@@ -281,7 +329,7 @@
         rec.cat = d.cat;
         rec.isMe = d.isMe;
         rec.target = d.target || null;
-        rec.facing = d.facing || rec.facing;
+        setFacing(rec, d.facing || rec.facing);
         next.push(rec);
         if (rec.el) {
           // el gato propio se dibuja aparte de los demás
@@ -301,6 +349,7 @@
           y: d.y,
           target: d.target || null,
           facing: d.facing || 'right',
+          flipped: undefined,
           path: d.path || null,
           isMe: d.isMe,
           el: null,
@@ -315,6 +364,7 @@
         byId[key] = rec;
         next.push(rec);
         createCatEl(rec);
+        applyFacing(rec);
         setWalk(rec, d.path, d.x, d.y);
       }
     }
@@ -344,6 +394,7 @@
     var el = document.createElement('div');
     el.className = 'world-cat';
     el.setAttribute('data-player-id', String(rec.id));
+    el.setAttribute('data-facing', rec.facing);
 
     var canvas = document.createElement('canvas');
     canvas.className = 'world-cat-canvas';
@@ -369,7 +420,10 @@
     rec.ry = rec.y;
 
     if (window.CatArt) {
-      rec.ctrl = window.CatArt.mount(canvas, rec.cat || window.CatArt.defaultCat(), { scale: 1, anim: 'idle' });
+      // El sprite nace con la orientación del gato (izquierda = volteado).
+      rec.flipped = rec.facing === 'left';
+      rec.ctrl = window.CatArt.mount(canvas, rec.cat || window.CatArt.defaultCat(),
+        { scale: 1, anim: 'idle', flip: rec.flipped });
     }
 
     var parent = rec.isMe ? layerMe : layerOthers;
@@ -394,6 +448,8 @@
     rec.el.style.left = (rec.rx / w * 100) + '%';
     rec.el.style.top = (rec.ry / h * 100) + '%';
     rec.el.style.transform = 'translate(-50%,-50%)';
+    // Profundidad: el gato con mayor `y` se dibuja encima (docs/mundo.md §3).
+    rec.el.style.zIndex = String(depthZ(rec.ry));
   }
 
   /* ------------------------------------------------------------------ */
@@ -442,7 +498,7 @@
 
     // El ancla es el punto de la ruta donde está el gato ahora.
     var ancla = pointAlongPath(ruta, dist);
-    rec.walk = { path: ruta, dist: dist, t0: now() };
+    rec.walk = { path: ruta, dist: dist, t0: now(), accX: 0 };
     // Mientras camina: el destino es el final de la ruta y la animación es walk.
     rec.target = { x: last.x, y: last.y };
     rec.anim = 'walk';
@@ -480,6 +536,10 @@
         p = pointAlongPath(w.path, dist);
         more = true;
       }
+      // Orientación: el gato mira hacia donde camina (docs/mundo.md §3).
+      var paso = facingFromStep(w.accX, p.x - rec.x, rec.facing);
+      w.accX = paso.accX;
+      setFacing(rec, paso.facing);
       rec.x = p.x;
       rec.y = p.y;
       rec.rx = p.x;
@@ -720,7 +780,7 @@
     if (payload.target && typeof payload.target === 'object') {
       rec.target = { x: num(payload.target.x, rec.x), y: num(payload.target.y, rec.y) };
     }
-    if (payload.facing === 'left' || payload.facing === 'right') rec.facing = payload.facing;
+    if (payload.facing === 'left' || payload.facing === 'right') setFacing(rec, payload.facing);
     // El servidor manda la ruta que sigue el gato: el cliente la recorre a la
     // misma velocidad que el servidor (60 px lógicos por segundo).
     setWalk(rec, payload.path, payload.x, payload.y);
@@ -777,7 +837,7 @@
     };
   }
 
-  window.WorldUI = {
+  var api = {
     mount: mount,
     unmount: unmount,
     setMoveHandler: setMoveHandler,
@@ -785,6 +845,16 @@
     applyJoin: applyJoin,
     applyLeft: applyLeft,
     applyMoved: applyMoved,
-    state: state
+    state: state,
+    // Orientación (puro): qué mira el gato según su avance horizontal.
+    facingFromStep: facingFromStep,
+    // Profundidad (puro): el z-index de un gato sale de su `y` y `byDepth`
+    // ordena una lista de gatos de arriba abajo.
+    depthZ: depthZ,
+    byDepth: byDepth
   };
+
+  if (typeof window !== 'undefined') window.WorldUI = api;
+  // Las funciones puras se pueden probar en Node (sin navegador).
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();
