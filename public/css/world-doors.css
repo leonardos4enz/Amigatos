@@ -1,0 +1,77 @@
+/* Amigatos — las salidas de la sala como objetos visibles (docs/mundo.md §4)
+ *
+ * Cada salida tiene un elemento del DOM puesto encima del rectángulo de la
+ * puerta (public/js/world-exits.js). Aquí se le da el aspecto de puerta, el
+ * cursor de mano, el resaltado al pasar el mouse y la etiqueta con el nombre
+ * del destino (que aparece al pasar el mouse).
+ */
+
+.world-exit-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* la puerta: se ve sobre el fondo y se puede pulsar */
+.world-exit-door {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: auto;
+  cursor: pointer;
+  border: 2px solid rgba(255, 246, 238, 0.5);
+  background: rgba(255, 209, 102, 0.1);
+  box-shadow: inset 0 0 6px rgba(255, 233, 180, 0.35);
+  transition: filter 120ms linear, border-color 120ms linear;
+}
+
+/* el resaltado: al pasar el mouse la puerta se aviva */
+.world-exit-door.is-hover {
+  filter: brightness(1.25) saturate(1.15);
+  border-color: #ffd166;
+  box-shadow:
+    inset 0 0 8px rgba(255, 233, 180, 0.65),
+    0 0 0 2px rgba(255, 209, 102, 0.55);
+}
+
+.world-exit-door:focus {
+  outline: 2px solid #ffd166;
+  outline-offset: 1px;
+}
+
+/* la etiqueta con el nombre del destino: oculta hasta que pasa el mouse */
+.world-exit-label {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  transform: translateY(-50%);
+  margin-left: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  font-family: "Pixelify Sans", monospace;
+  font-size: 13px;
+  line-height: 1.2;
+  color: #fff;
+  background: rgba(59, 42, 64, 0.85);
+  border: 1px solid #ffd166;
+  border-radius: 4px;
+  text-shadow: 1px 1px 0 #3b2a40;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms linear;
+}
+
+/* en las salidas del borde derecho la etiqueta se abre hacia la izquierda */
+.world-exit-door.is-right .world-exit-label {
+  left: auto;
+  right: 100%;
+  margin-left: 0;
+  margin-right: 4px;
+}
+
+.world-exit-door.is-hover .world-exit-label,
+.world-exit-door:focus .world-exit-label {
+  opacity: 1;
+  visibility: visible;
+}
