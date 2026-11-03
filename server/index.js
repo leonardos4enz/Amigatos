@@ -683,6 +683,24 @@ io.on('connection', (socket) => {
     startWorldWalk(uid, exit);
   });
 
+  socket.on('world:travel', (payload = {}) => {
+    const wanted = typeof payload.room === 'string' ? payload.room.trim() : '';
+    const roomData = wanted ? worldRules.getRoom(wanted) : null;
+    // Solo se puede viajar a las salas exteriores (las que salen en el mapa del
+    // pueblo). Las interiores se llegan solo por sus puertas.
+    if (!roomData || !roomData.exterior) return sendError(socket, 'Ese lugar no se puede viajar.');
+
+    // Anti-abuso: mismo control de frecuencia que el resto de eventos del mundo
+    // (ventana deslizante compartida con los movimientos). Un viaje rechazado no
+    // gasta oportunidades: solo cuenta el viaje aceptado.
+    const check = worldRules.allowMove(worldMoves.get(uid) || [], Date.now());
+    if (!check.allowed) return sendError(socket, 'Te mueves muy rápido.');
+    worldMoves.set(uid, check.times);
+
+    // El gato aparece en el spawn de la sala de destino.
+    enterWorld(uid, roomData);
+  });
+
   socket.on('world:leave', () => {
     leaveWorld(uid);
   });
