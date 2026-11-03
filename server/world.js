@@ -19,11 +19,14 @@ function rect(x0, y0, x1, y1) {
   ];
 }
 
+// Cada sala del catálogo. El campo `exterior` marca si la sala es de fuera
+// (aparece en el mapa del pueblo) o interior (solo se llega por sus puertas).
 const ROOMS = {
   plaza: {
     id: 'plaza',
     name: 'Plaza Bigotes',
     bg: 'plaza',
+    exterior: true,
     width: 320,
     height: 200,
     // La línea de suelo está en y=110: por encima solo hay cielo y los tejados.
@@ -51,12 +54,20 @@ const ROOMS = {
         toSpawn: { x: 30, y: 180 },
         label: 'Café del Ovillo',
       },
+      {
+        // Y un camino hacia abajo, por donde se baja al muelle.
+        x: 60, y: 184, w: 16, h: 16,
+        to: 'muelle',
+        toSpawn: { x: 160, y: 30 },
+        label: 'Muelle de las Sardinas',
+      },
     ],
   },
   parque: {
     id: 'parque',
     name: 'Parque Ronroneo',
     bg: 'parque',
+    exterior: true,
     width: 320,
     height: 200,
     // Misma línea de suelo que en la plaza: el parque empieza en y=110.
@@ -82,6 +93,7 @@ const ROOMS = {
     id: 'cafe',
     name: 'Café del Ovillo',
     bg: 'cafe',
+    exterior: false,
     width: 320,
     height: 200,
     // Interior: la pared con las estanterías baja hasta y=110, el suelo empieza ahí.
@@ -101,6 +113,94 @@ const ROOMS = {
         to: 'plaza',
         toSpawn: { x: 290, y: 180 },
         label: 'Plaza Bigotes',
+      },
+    ],
+  },
+  muelle: {
+    id: 'muelle',
+    name: 'Muelle de las Sardinas',
+    bg: 'muelle',
+    exterior: true,
+    width: 320,
+    height: 200,
+    // El muelle está en el agua: solo se pisan las tablas (y 120..200) y el
+    // camino que baja de la plaza (x 150..170) para llegar a ellas.
+    spawn: { x: 160, y: 180 },
+    walkable: [
+      rect(150, 0, 170, 120),  // el camino que baja de la plaza al muelle
+      rect(0, 120, 320, 200),  // las tablas del muelle
+    ],
+    exits: [
+      {
+        // Arriba, por el camino que sube a la plaza.
+        x: 152, y: 0, w: 16, h: 16,
+        to: 'plaza',
+        toSpawn: { x: 67, y: 175 },
+        label: 'Plaza Bigotes',
+      },
+      {
+        // Y a la derecha, siguiendo las tablas hacia el mercado.
+        x: 304, y: 130, w: 16, h: 40,
+        to: 'mercado',
+        toSpawn: { x: 30, y: 180 },
+        label: 'Mercado del Cascabel',
+      },
+    ],
+  },
+  mercado: {
+    id: 'mercado',
+    name: 'Mercado del Cascabel',
+    bg: 'mercado',
+    exterior: true,
+    width: 320,
+    height: 200,
+    // El mercado es una plaza con puestos: el puesto central (x 120..200,
+    // y 150..200) no se pisa, se rodea por detrás (y 110..150).
+    spawn: { x: 240, y: 180 },
+    walkable: [
+      rect(0, 110, 120, 200),   // puestos de la izquierda
+      rect(200, 110, 320, 200), // puestos de la derecha
+      rect(120, 110, 200, 150), // el pasillo detrás del puesto central
+    ],
+    exits: [
+      {
+        // A la izquierda, por donde se sigue hacia el muelle.
+        x: 0, y: 130, w: 16, h: 40,
+        to: 'muelle',
+        toSpawn: { x: 290, y: 180 },
+        label: 'Muelle de las Sardinas',
+      },
+      {
+        // Y a la derecha, hacia la colina del faro.
+        x: 304, y: 130, w: 16, h: 40,
+        to: 'faro',
+        toSpawn: { x: 30, y: 180 },
+        label: 'Colina del Faro',
+      },
+    ],
+  },
+  faro: {
+    id: 'faro',
+    name: 'Colina del Faro',
+    bg: 'faro',
+    exterior: true,
+    width: 320,
+    height: 200,
+    // La colina sube desde y=120. La base del faro (x 90..210, y 160..200) no
+    // se pisa: se rodea por el mirador de detrás (y 120..160).
+    spawn: { x: 260, y: 180 },
+    walkable: [
+      rect(0, 120, 90, 200),   // la ladera de la izquierda
+      rect(210, 120, 320, 200), // la ladera de la derecha
+      rect(90, 120, 210, 160), // el mirador detrás del faro
+    ],
+    exits: [
+      {
+        // Abajo de la colina, de vuelta al mercado.
+        x: 0, y: 130, w: 16, h: 40,
+        to: 'mercado',
+        toSpawn: { x: 290, y: 180 },
+        label: 'Mercado del Cascabel',
       },
     ],
   },

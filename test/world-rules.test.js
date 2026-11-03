@@ -31,15 +31,24 @@ const {
 // catálogo
 // ------------------------------------------------------------------
 
-test('ROOMS tiene exactamente las 3 salas del mundo', () => {
-  assert.deepEqual(Object.keys(ROOMS).sort(), ['cafe', 'parque', 'plaza']);
+test('ROOMS tiene exactamente las 6 salas del mundo', () => {
+  assert.deepEqual(Object.keys(ROOMS).sort(), ['cafe', 'faro', 'mercado', 'muelle', 'parque', 'plaza']);
 });
 
-test('las tres salas miden 320×200', () => {
+test('las seis salas miden 320×200', () => {
   for (const room of Object.values(ROOMS)) {
     assert.equal(room.width, 320, `ancho de "${room.id}"`);
     assert.equal(room.height, 200, `alto de "${room.id}"`);
   }
+});
+
+test('las salas exteriores están marcadas y solo el café es interior', () => {
+  const exteriores = Object.values(ROOMS)
+    .filter((room) => room.exterior)
+    .map((room) => room.id)
+    .sort();
+  assert.deepEqual(exteriores, ['faro', 'mercado', 'muelle', 'parque', 'plaza']);
+  assert.equal(ROOMS.cafe.exterior, false);
 });
 
 test('plaza: nombre, fondo, tamaño, spawn y salidas', () => {
@@ -50,7 +59,7 @@ test('plaza: nombre, fondo, tamaño, spawn y salidas', () => {
   assert.equal(plaza.width, 320);
   assert.equal(plaza.height, 200);
   assert.deepEqual(plaza.spawn, { x: 100, y: 180 });
-  assert.equal(plaza.exits.length, 2);
+  assert.equal(plaza.exits.length, 3);
 
   const aParque = plaza.exits.find((e) => e.to === 'parque');
   assert.deepEqual(
@@ -67,6 +76,14 @@ test('plaza: nombre, fondo, tamaño, spawn y salidas', () => {
   );
   assert.deepEqual(aCafe.toSpawn, { x: 30, y: 180 });
   assert.equal(aCafe.label, 'Café del Ovillo');
+
+  const aMuelle = plaza.exits.find((e) => e.to === 'muelle');
+  assert.deepEqual(
+    { x: aMuelle.x, y: aMuelle.y, w: aMuelle.w, h: aMuelle.h },
+    { x: 60, y: 184, w: 16, h: 16 }
+  );
+  assert.deepEqual(aMuelle.toSpawn, { x: 160, y: 30 });
+  assert.equal(aMuelle.label, 'Muelle de las Sardinas');
 });
 
 test('parque: nombre, fondo, tamaño, spawn y salida', () => {
@@ -107,6 +124,118 @@ test('cafe: nombre, fondo, tamaño, spawn y salida', () => {
   assert.equal(salida.to, 'plaza');
   assert.deepEqual(salida.toSpawn, { x: 290, y: 180 });
   assert.equal(salida.label, 'Plaza Bigotes');
+});
+
+test('muelle: nombre, fondo, tamaño, spawn y salidas', () => {
+  const muelle = ROOMS.muelle;
+  assert.equal(muelle.id, 'muelle');
+  assert.equal(muelle.name, 'Muelle de las Sardinas');
+  assert.equal(muelle.bg, 'muelle');
+  assert.equal(muelle.exterior, true);
+  assert.equal(muelle.width, 320);
+  assert.equal(muelle.height, 200);
+  assert.deepEqual(muelle.spawn, { x: 160, y: 180 });
+  assert.equal(muelle.exits.length, 2);
+
+  const aPlaza = muelle.exits.find((e) => e.to === 'plaza');
+  assert.deepEqual(
+    { x: aPlaza.x, y: aPlaza.y, w: aPlaza.w, h: aPlaza.h },
+    { x: 152, y: 0, w: 16, h: 16 }
+  );
+  assert.deepEqual(aPlaza.toSpawn, { x: 67, y: 175 });
+  assert.equal(aPlaza.label, 'Plaza Bigotes');
+
+  const aMercado = muelle.exits.find((e) => e.to === 'mercado');
+  assert.deepEqual(
+    { x: aMercado.x, y: aMercado.y, w: aMercado.w, h: aMercado.h },
+    { x: 304, y: 130, w: 16, h: 40 }
+  );
+  assert.deepEqual(aMercado.toSpawn, { x: 30, y: 180 });
+  assert.equal(aMercado.label, 'Mercado del Cascabel');
+});
+
+test('mercado: nombre, fondo, tamaño, spawn y salidas', () => {
+  const mercado = ROOMS.mercado;
+  assert.equal(mercado.id, 'mercado');
+  assert.equal(mercado.name, 'Mercado del Cascabel');
+  assert.equal(mercado.bg, 'mercado');
+  assert.equal(mercado.exterior, true);
+  assert.equal(mercado.width, 320);
+  assert.equal(mercado.height, 200);
+  assert.deepEqual(mercado.spawn, { x: 240, y: 180 });
+  assert.equal(mercado.exits.length, 2);
+
+  const aMuelle = mercado.exits.find((e) => e.to === 'muelle');
+  assert.deepEqual(
+    { x: aMuelle.x, y: aMuelle.y, w: aMuelle.w, h: aMuelle.h },
+    { x: 0, y: 130, w: 16, h: 40 }
+  );
+  assert.deepEqual(aMuelle.toSpawn, { x: 290, y: 180 });
+  assert.equal(aMuelle.label, 'Muelle de las Sardinas');
+
+  const aFaro = mercado.exits.find((e) => e.to === 'faro');
+  assert.deepEqual(
+    { x: aFaro.x, y: aFaro.y, w: aFaro.w, h: aFaro.h },
+    { x: 304, y: 130, w: 16, h: 40 }
+  );
+  assert.deepEqual(aFaro.toSpawn, { x: 30, y: 180 });
+  assert.equal(aFaro.label, 'Colina del Faro');
+});
+
+test('faro: nombre, fondo, tamaño, spawn y salida', () => {
+  const faro = ROOMS.faro;
+  assert.equal(faro.id, 'faro');
+  assert.equal(faro.name, 'Colina del Faro');
+  assert.equal(faro.bg, 'faro');
+  assert.equal(faro.exterior, true);
+  assert.equal(faro.width, 320);
+  assert.equal(faro.height, 200);
+  assert.deepEqual(faro.spawn, { x: 260, y: 180 });
+  assert.equal(faro.exits.length, 1);
+
+  const salida = faro.exits[0];
+  assert.deepEqual(
+    { x: salida.x, y: salida.y, w: salida.w, h: salida.h },
+    { x: 0, y: 130, w: 16, h: 40 }
+  );
+  assert.equal(salida.to, 'mercado');
+  assert.deepEqual(salida.toSpawn, { x: 290, y: 180 });
+  assert.equal(salida.label, 'Mercado del Cascabel');
+});
+
+test('las salas nuevas tienen piso caminable y spawns válidos', () => {
+  for (const id of ['muelle', 'mercado', 'faro']) {
+    const room = ROOMS[id];
+    assert.ok(
+      Array.isArray(room.walkable) && room.walkable.length > 0,
+      `la sala "${id}" necesita polígonos caminables`
+    );
+    assert.equal(
+      isWalkable(room, room.spawn.x, room.spawn.y),
+      true,
+      `el spawn de "${id}" no es caminable`
+    );
+  }
+});
+
+test('desde la plaza se llega al faro encadenando salidas', () => {
+  // El pueblo es una cadena: plaza → muelle → mercado → faro.
+  // Se busca con un recorrido en anchura sobre el grafo de salidas.
+  const cola = ['plaza'];
+  const vistos = new Set(['plaza']);
+  const camino = { plaza: [] };
+  while (cola.length > 0) {
+    const id = cola.shift();
+    for (const salida of ROOMS[id].exits) {
+      if (vistos.has(salida.to)) continue;
+      vistos.add(salida.to);
+      camino[salida.to] = [...camino[id], salida.to];
+      cola.push(salida.to);
+    }
+  }
+  assert.deepEqual(camino.faro, ['muelle', 'mercado', 'faro']);
+  assert.deepEqual(camino.muelle, ['muelle']);
+  assert.deepEqual(camino.mercado, ['muelle', 'mercado']);
 });
 
 // ------------------------------------------------------------------
@@ -285,6 +414,32 @@ const MUESTRAS = {
       { x: 60, y: 60, motivo: 'hueco entre los muebles de la pared' },
       { x: 120, y: 130, motivo: 'el mostrador' },
       { x: 280, y: 175, motivo: 'el mueble grande (la mesa)' },
+    ],
+  },
+  muelle: {
+    dentro: [{ x: 160, y: 180 }, { x: 160, y: 40 }, { x: 40, y: 150 }, { x: 300, y: 160 }],
+    fuera: [
+      { x: 120, y: 30, motivo: 'cielo' },
+      { x: 40, y: 60, motivo: 'el mar, al lado del camino' },
+      { x: 280, y: 100, motivo: 'por encima de las tablas' },
+    ],
+  },
+  mercado: {
+    dentro: [{ x: 240, y: 180 }, { x: 30, y: 150 }, { x: 160, y: 130 }, { x: 300, y: 130 }],
+    fuera: [
+      { x: 160, y: 40, motivo: 'cielo' },
+      { x: 160, y: 80, motivo: 'por encima de la línea de suelo' },
+      { x: 60, y: 100, motivo: 'por encima de los puestos' },
+      { x: 160, y: 170, motivo: 'el puesto central' },
+    ],
+  },
+  faro: {
+    dentro: [{ x: 260, y: 180 }, { x: 30, y: 150 }, { x: 150, y: 140 }, { x: 300, y: 130 }],
+    fuera: [
+      { x: 160, y: 40, motivo: 'cielo' },
+      { x: 150, y: 100, motivo: 'por encima de la ladera' },
+      { x: 150, y: 180, motivo: 'la base del faro' },
+      { x: 100, y: 190, motivo: 'la base del faro' },
     ],
   },
 };

@@ -94,7 +94,7 @@ test('entrar sin room lleva a la plaza, en el spawn', async () => {
   assert.equal(state.room.width, 320);
   assert.equal(state.room.height, 200);
   assert.deepEqual(state.room.spawn, { x: 100, y: 180 });
-  assert.equal(state.room.exits.length, 2);
+  assert.equal(state.room.exits.length, 3);
   assert.equal(state.me.id, p.user.id);
   assert.equal(state.me.username, p.user.username);
   assert.equal(state.me.x, 100);
@@ -115,6 +115,18 @@ test('entrar en una sala concreta devuelve esa sala', async () => {
   assert.deepEqual(state.room.spawn, { x: 200, y: 180 });
   assert.equal(state.me.x, 200);
   assert.equal(state.me.y, 180);
+});
+
+test('se puede entrar en las salas nuevas y llegan con su tamaño', async () => {
+  const p = await player();
+  for (const id of ['muelle', 'mercado', 'faro']) {
+    const state = await enter(p, id);
+    assert.equal(state.room.id, id);
+    assert.equal(state.room.width, 320);
+    assert.equal(state.room.height, 200);
+    assert.deepEqual(state.room.spawn, ROOMS[id].spawn);
+    assert.deepEqual({ x: state.me.x, y: state.me.y }, ROOMS[id].spawn);
+  }
 });
 
 test('world:state manda el piso caminable de la sala', async () => {
