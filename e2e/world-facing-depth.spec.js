@@ -116,9 +116,11 @@ test('el sprite del gato se voltea al cambiar de orientación', async ({ page })
       }
     }
 
-    // 2. El mundo voltea el sprite del gato cuando cambia la orientación.
-    //    Las dos capturas salen del mismo cuadro (t = 0), así que la única
-    //    diferencia posible es el volteo.
+    // 2. El mundo voltea el sprite del gato cuando cambia de orientación.
+    //    Se congela el reloj para que las dos capturas salgan del mismo
+    //    cuadro: así la única diferencia posible entre ellas es el volteo.
+    const realNow = globalThis.performance.now.bind(globalThis.performance);
+    globalThis.performance.now = () => 1000;
     const captura = (dir) => {
       globalThis.window.WorldUI.applyMoved({
         id: 1,
@@ -131,6 +133,8 @@ test('el sprite del gato se voltea al cambiar de orientación', async ({ page })
     };
     const derecha = captura('right');
     const izquierda = captura('left');
+    globalThis.performance.now = realNow;
+
     let distintos = 0;
     for (let y = 0; y < W; y++) {
       for (let x = 0; x < W; x++) {
@@ -160,31 +164,81 @@ test('los gatos se ordenan por profundidad: el de mayor y se dibuja encima', asy
   const errors = trackErrors(page);
   await page.goto('/world-lab.html');
 
-  // Los dos gatos del laboratorio empiezan en la misma altura (y = 180).
-  const inicio = await page.evaluate(() => {
-    const z = (id) => globalThis.getComputedStyle(
-      globalThis.document.querySelector(`.world-cat[data-player-id="${id}"]`)
-    ).zIndex;
-    return { uno: z('1'), dos: z('2') };
-  });
-  expect(inicio.uno).toBe('180');
-  expect(inicio.dos).toBe('180');
-
-  // El gato 2 sube: su y es menor, así que se dibuja debajo del gato 1.
-  await page.evaluate(() => globalThis.window.WorldUI.applyMoved({ id: 2, x: 250, y: 120 }));
-
-  const fin = await page.evaluate(() => {
-    const z = (id) => globalThis.getComputedStyle(
-      globalThis.document.querySelector(`.world-cat[data-player-id="${id}"]`)
-    ).zIndex;
-    const y = (id) => globalThis.window.__amigatos.players.find((p) => String(p.id) === id).y;
-    return { uno: z('1'), dos: z('2'), yUno: y('1'), yDos: y('2') };
+  // Tres gatos en la misma columna: el PROPIO (id 10) va primero en el DOM,
+  // el otro (id 20) tiene mayor `y` y el tercero (id 30) menor `y` que el
+  // propio. El orden de pintado lo decide la profundidad: el de mayor `y`
+  // encima, sin importar el orden en el DOM ni que el gato sea "nuestro".
+  await page.evaluate(() => {
+    const cat = globalThis.CatArt.defaultCat();
+    globalThis.window.WorldUI.applyState({
+      room: { id: 'plaza', name: 'Plaza Bigotes', bg: 'plaza', width: 320, height: 200, walkable: [], exits: [] },
+      players: [
+        { id: 10, username: 'Michi', cat, x: 100, y: 170 },
+        { id: 20, username: 'Nube', cat, x: 100, y: 180 },
+        { id: 30, username: 'Pelusa', cat, x: 100, y: 160 }
+      ],
+      me: { id: 10, username: 'Michi', cat, x: 100, y: 170 }
+    });
   });
 
-  expect(fin.yDos).toBe(120);
-  expect(Number(fin.dos), 'el gato de menor y tiene menor z-index').toBeLessThan(Number(fin.uno));
-  expect(Number(fin.dos)).toBe(120);
-  expect(Number(fin.uno)).toBe(180);
+  const r = await page.evaluate(() => {
+    const gato = (id) => globalThis.document.querySelector(`.world-cat[data-player-id="${id}"]`);
+    const propio = gato('10');
+    const otro = gato('20');
+    const tercero = gato('30');
+
+    // Los gatos tienen que estar en la misma capa: si cada uno en la suya,
+    // sus `z-index` no se comparan entre sí y el que esté en la última capa
+    // siempre tapa a los demás.
+    const mismaCapa = propio.parentElement === otro.parentElement &&
+      propio.parentElement === tercero.parentElement;
+    const z = (el) => globalThis.getComputedStyle(el).zIndex;
+
+    // Para comprobar el orden REAL de pintado hay que poder tocar los gatos
+    // (el mundo los pone con pointer-events: none para no estorbar al clic).
+    [propio, otro, tercero].forEach((el) => { el.style.pointerEvents = 'auto'; });
+
+    const stage = globalThis.document.getElementById('world-stage').getBoundingClientRect();
+    const k = stage.width / 320;
+    const css = (lx, ly) => ({ x: stage.left + lx * k, y: stage.top + ly * k });
+    const caja = (el) => el.getBoundingClientRect();
+    const dentro = (rect, p) => p.x >= rect.left && p.x <= rect.right &&
+      p.y >= rect.top && p.y <= rect.bottom;
+
+    // Punto 1: donde se solapan el propio (y = 170) y el tercero (y = 160),
+    // sin el otro (y = 180): tiene que verse el propio.
+    const p1 = css(100, 159);
+    // Punto 2: donde se solapan el propio (y = 170) y el otro (y = 180), sin
+    // el tercero (y = 160): tiene que verse el otro.
+    const p2 = css(100, 181);
+
+    // ¿Qué se ve en ese punto? El que está más abajo en la pantalla.
+    const encima = (p) => {
+      const el = globalThis.document.elementFromPoint(p.x, p.y);
+      const g = el ? el.closest('.world-cat') : null;
+      return g ? g.getAttribute('data-player-id') : null;
+    };
+
+    return {
+      mismaCapa,
+      zPropio: z(propio),
+      zOtro: z(otro),
+      zTercero: z(tercero),
+      p1Ok: dentro(caja(propio), p1) && dentro(caja(tercero), p1) && !dentro(caja(otro), p1),
+      p2Ok: dentro(caja(propio), p2) && dentro(caja(otro), p2) && !dentro(caja(tercero), p2),
+      idEncima1: encima(p1),
+      idEncima2: encima(p2)
+    };
+  });
+
+  expect(r.p1Ok, 'el punto 1 está en el solape del propio y el tercero').toBe(true);
+  expect(r.p2Ok, 'el punto 2 está en el solape del propio y el otro').toBe(true);
+  expect(r.mismaCapa, 'los gatos comparten la misma capa (el mismo contexto de apilamiento)').toBe(true);
+  expect(Number(r.zOtro), 'el gato de mayor y tiene mayor z-index').toBeGreaterThan(Number(r.zPropio));
+  expect(Number(r.zPropio), 'el gato de mayor y tiene mayor z-index').toBeGreaterThan(Number(r.zTercero));
+  // La prueba de verdad: en la zona de solape se ve el gato de mayor y.
+  expect(r.idEncima1, 'encima se dibuja el gato de mayor y, aunque sea el primero del DOM').toBe('10');
+  expect(r.idEncima2, 'encima se dibuja el gato de mayor y, aunque no sea el propio').toBe('20');
 
   expect(errors, `errores de JavaScript: ${errors.join(' | ')}`).toEqual([]);
 });

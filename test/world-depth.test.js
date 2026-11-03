@@ -8,24 +8,25 @@ const assert = require('node:assert/strict');
 const world = require('../public/js/world.js');
 
 test('la orientación cambia al invertir el sentido de la marcha', () => {
-  // Avance horizontal acumulado hacia la derecha: el gato mira a la derecha.
-  let paso = world.facingFromStep(0, 0.8, 'right');
-  assert.equal(paso.facing, 'right');
-  paso = world.facingFromStep(paso.accX, 0.8, paso.facing);
-  assert.equal(paso.facing, 'right');
+  // Avance horizontal hacia la derecha: el gato mira a la derecha.
+  assert.equal(world.facingFromStep(0.8, 'right'), 'right');
+  assert.equal(world.facingFromStep(1, 'left'), 'right', 'el avance manda sobre la orientación anterior');
 
   // Hacia la izquierda: el gato mira a la izquierda.
-  paso = world.facingFromStep(0, -0.8, 'right');
-  assert.equal(paso.facing, 'right', 'un píxel no basta para cambiar de sentido');
-  paso = world.facingFromStep(paso.accX, -0.8, paso.facing);
-  assert.equal(paso.facing, 'left');
-  assert.equal(paso.accX, 0, 'al cambiar de sentido el acumulado vuelve a cero');
+  assert.equal(world.facingFromStep(-0.8, 'right'), 'left');
+  assert.equal(world.facingFromStep(-1, 'left'), 'left');
+});
+
+test('un avance de un solo píxel ya cambia el sentido', () => {
+  // 60 px lógicos por segundo a 60 fps: el avance por cuadro es de 1 px.
+  // El cambio de sentido no puede depender de un umbral que lo retrase.
+  assert.equal(world.facingFromStep(1, 'left'), 'right');
+  assert.equal(world.facingFromStep(-1, 'right'), 'left');
 });
 
 test('caminar en vertical no cambia la orientación', () => {
-  let paso = world.facingFromStep(0, 0, 'left');
-  for (let i = 0; i < 10; i++) paso = world.facingFromStep(paso.accX, 0, paso.facing);
-  assert.equal(paso.facing, 'left');
+  assert.equal(world.facingFromStep(0, 'left'), 'left');
+  assert.equal(world.facingFromStep(0, 'right'), 'right');
 });
 
 test('el z-index sale de la y: el gato de más abajo se dibuja encima', () => {
@@ -33,15 +34,4 @@ test('el z-index sale de la y: el gato de más abajo se dibuja encima', () => {
   assert.equal(world.depthZ(120.4), 120);
   assert.equal(world.depthZ('90'), 90);
   assert.ok(world.depthZ(180) > world.depthZ(120), 'la y mayor tiene el z-index mayor');
-});
-
-test('byDepth ordena los gatos de arriba abajo sin tocar la lista original', () => {
-  const gatos = [{ id: 1, y: 180 }, { id: 2, y: 120 }, { id: 3, y: 150 }];
-  const orden = world.byDepth(gatos);
-  assert.deepEqual(orden.map((g) => g.id), [2, 3, 1]);
-  assert.deepEqual(gatos.map((g) => g.id), [1, 2, 3], 'la lista original no se ordena');
-  // El último del orden es el que se dibuja encima: su z-index es el mayor.
-  const ultimo = orden[orden.length - 1];
-  const primero = orden[0];
-  assert.ok(world.depthZ(ultimo.y) > world.depthZ(primero.y));
 });

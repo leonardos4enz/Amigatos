@@ -353,11 +353,15 @@ tarda el gato en llegar es la distancia de la ruta dividida por `SPEED`.
 El `facing` que manda el servidor es el sentido en el que camina el gato (`'left'` o `'right'`). El
 cliente lo publica en `window.__amigatos` y además **voltea el sprite** con `CatArt.setFlip()`
 (cuando el gato mira a la izquierda, el sprite sale espejado). Mientras el gato recorre la ruta, el
-cliente calcula la orientación con su propio avance horizontal (`WorldUI.facingFromStep`), así que
+cliente calcula la orientación con su propio avance horizontal (`WorldUI.facingFromStep(dx, previo)`):
+si el avance es horizontal, el signo del avance decide el sentido (cualquier avance, por pequeño que
+sea); si el gato camina en vertical (avance horizontal cero) se mantiene la orientación anterior. Así
 `me.facing` refleja el sentido en el que el gato está caminando ahora mismo, incluso si el camino da
 media vuelta. La orientación de cada gato también está en el DOM: `data-facing` en `.world-cat`.
 
 ### Profundidad de los gatos
 Los gatos se ordenan por su `y` (docs/mundo.md §3): el `z-index` de cada gato es su `y` redondeado
 (`WorldUI.depthZ(y)`), así que **el gato con mayor `y` se dibuja encima** del que tiene menor `y`.
-`WorldUI.byDepth(lista)` devuelve esa lista ordenada de arriba abajo (de menor `y` a mayor `y`).
+Todos los gatos (el propio y los de los demás) viven en la **misma capa** (`.world-layer`), para que
+sus `z-index` se comparen entre sí y el orden de pintado lo decida la profundidad y no el orden en el
+DOM.

@@ -38,9 +38,7 @@
   var stage = null;       // elemento donde se monta la pantalla del mundo
   var bgCtrl = null;      // controlador de CatBG (fondo)
   var bgBase = 0;         // base lógica con la que está pintado el fondo
-  var layer = null;       // capa de gatos
-  var layerOthers = null; // los gatos de los demás
-  var layerMe = null;     // el gato propio
+  var layer = null;       // capa de gatos (todos, ordenados por profundidad)
   var moveHandler = null; // fn(x, y) que avisa del clic en el piso
   var rafId = null;       // bucle de interpolación
   var scale = 0;          // escala entera del escenario (1..3)
@@ -230,29 +228,22 @@
   }
 
   // Orientación a partir del avance horizontal: el gato mira hacia donde
-  // camina (docs/mundo.md §3). El avance se acumula para no cambiar de
-  // sentido con cada píxel (y no hacerlo al caminar en vertical).
-  // Devuelve la orientación nueva y el avance acumulado que queda.
-  function facingFromStep(accX, dx, previous) {
-    var acc = num(accX, 0) + num(dx, 0);
-    if (acc > 1) return { facing: 'right', accX: 0 };
-    if (acc < -1) return { facing: 'left', accX: 0 };
-    return { facing: previous, accX: acc };
+  // camina (docs/mundo.md §3). El avance sale de interpolar la ruta, así que
+  // su signo es el del tramo que se está recorriendo: cualquier avance
+  // horizontal decide el sentido (no hace falta un umbral, que retrasaría el
+  // cambio). Si el gato camina en vertical no hay avance horizontal y se
+  // mantiene la orientación anterior.
+  function facingFromStep(dx, previous) {
+    var d = num(dx, 0);
+    if (d > 0) return 'right';
+    if (d < 0) return 'left';
+    return previous === 'left' ? 'left' : 'right';
   }
 
   // Profundidad: los gatos se ordenan por `y` y el de mayor `y` se dibuja
   // encima (docs/mundo.md §3). El z-index sale directamente de la `y`.
   function depthZ(y) {
     return Math.round(num(y, 0));
-  }
-
-  // Ordena una lista de gatos de arriba abajo (de menor `y` a mayor `y`): el
-  // que está más abajo en la pantalla se dibuja el último, encima de los demás.
-  function byDepth(list) {
-    if (!Array.isArray(list)) return [];
-    return list.slice().sort(function (a, b) {
-      return num(a && a.y, 0) - num(b && b.y, 0);
-    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -332,9 +323,9 @@
         setFacing(rec, d.facing || rec.facing);
         next.push(rec);
         if (rec.el) {
-          // el gato propio se dibuja aparte de los demás
-          var parent = rec.isMe ? layerMe : layerOthers;
-          if (parent && rec.el.parentNode !== parent) parent.appendChild(rec.el);
+          // Todos los gatos viven en la misma capa: el orden de pintado lo
+          // decide el `z-index` de cada uno (su `y`), no el orden en el DOM.
+          if (layer && rec.el.parentNode !== layer) layer.appendChild(rec.el);
           if (rec.label) rec.label.textContent = rec.username;
           if (rec.ctrl && rec.cat) rec.ctrl.setCat(rec.cat);
         }
@@ -426,8 +417,7 @@
         { scale: 1, anim: 'idle', flip: rec.flipped });
     }
 
-    var parent = rec.isMe ? layerMe : layerOthers;
-    if (parent) parent.appendChild(el);
+    if (layer) layer.appendChild(el);
     place(rec);
   }
 
@@ -498,7 +488,7 @@
 
     // El ancla es el punto de la ruta donde está el gato ahora.
     var ancla = pointAlongPath(ruta, dist);
-    rec.walk = { path: ruta, dist: dist, t0: now(), accX: 0 };
+    rec.walk = { path: ruta, dist: dist, t0: now() };
     // Mientras camina: el destino es el final de la ruta y la animación es walk.
     rec.target = { x: last.x, y: last.y };
     rec.anim = 'walk';
@@ -537,9 +527,7 @@
         more = true;
       }
       // Orientación: el gato mira hacia donde camina (docs/mundo.md §3).
-      var paso = facingFromStep(w.accX, p.x - rec.x, rec.facing);
-      w.accX = paso.accX;
-      setFacing(rec, paso.facing);
+      setFacing(rec, facingFromStep(p.x - rec.x, rec.facing));
       rec.x = p.x;
       rec.y = p.y;
       rec.rx = p.x;
@@ -605,16 +593,6 @@
     layer.className = 'world-layer';
     layer.style.cssText = 'position:absolute;inset:0;z-index:1;pointer-events:none;';
 
-    layerOthers = document.createElement('div');
-    layerOthers.className = 'world-others';
-    layerOthers.style.cssText = 'position:absolute;inset:0;';
-
-    layerMe = document.createElement('div');
-    layerMe.className = 'world-me';
-    layerMe.style.cssText = 'position:absolute;inset:0;';
-
-    layer.appendChild(layerOthers);
-    layer.appendChild(layerMe);
     stage.appendChild(layer);
 
     Object.keys(byId).forEach(function (key) {
@@ -668,8 +646,6 @@
     if (bgCtrl) { bgCtrl.destroy(); bgCtrl = null; }
     if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
     layer = null;
-    layerOthers = null;
-    layerMe = null;
 
     if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId);
     rafId = null;
@@ -848,10 +824,8 @@
     state: state,
     // Orientación (puro): qué mira el gato según su avance horizontal.
     facingFromStep: facingFromStep,
-    // Profundidad (puro): el z-index de un gato sale de su `y` y `byDepth`
-    // ordena una lista de gatos de arriba abajo.
-    depthZ: depthZ,
-    byDepth: byDepth
+    // Profundidad (puro): el z-index de un gato sale de su `y`.
+    depthZ: depthZ
   };
 
   if (typeof window !== 'undefined') window.WorldUI = api;
