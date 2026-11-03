@@ -41,6 +41,7 @@
   var layer = null;       // capa de gatos
   var layerOthers = null; // los gatos de los demás
   var layerMe = null;     // el gato propio
+  var layerExits = null;  // capa de las puertas (salidas visibles)
   var moveHandler = null; // fn(x, y) que avisa del clic en el piso
   var rafId = null;       // bucle de interpolación
   var scale = 0;          // escala entera del escenario (1..3)
@@ -511,6 +512,27 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Las salidas: puertas visibles sobre el fondo (docs/mundo.md §4)        */
+  /* ------------------------------------------------------------------ */
+
+  // Pinta las puertas de la sala actual: un elemento por salida, con su
+  // etiqueta y su resaltado (public/js/world-exits.js).
+  function renderExits() {
+    if (!layerExits || !window.WorldExits) return;
+    window.WorldExits.render(layerExits, model.room, onExitPick);
+  }
+
+  // Al pulsar una puerta, el gato camina hasta ella: se pide al servidor el
+  // punto de la salida y el servidor decide la ruta, el umbral y el cruce.
+  // El cliente no cambia de sala por su cuenta.
+  function onExitPick(exit) {
+    if (!exit || typeof moveHandler !== 'function') return;
+    var x = Math.round(num(exit.x, 0) + num(exit.w, 0) / 2);
+    var y = Math.round(num(exit.y, 0) + num(exit.h, 0) / 2);
+    moveHandler(x, y);
+  }
+
+  /* ------------------------------------------------------------------ */
   /* API pública                                                          */
   /* ------------------------------------------------------------------ */
 
@@ -541,6 +563,13 @@
 
     mountBg();
 
+    // La capa de las puertas va debajo de los gatos: el gato pasa por delante
+    // de la puerta, pero la puerta se puede pulsar.
+    layerExits = document.createElement('div');
+    layerExits.className = 'world-exit-layer';
+    layerExits.style.cssText = 'position:absolute;inset:0;z-index:1;pointer-events:none;';
+    stage.appendChild(layerExits);
+
     layer = document.createElement('div');
     layer.className = 'world-layer';
     layer.style.cssText = 'position:absolute;inset:0;z-index:1;pointer-events:none;';
@@ -567,6 +596,7 @@
 
     stage.addEventListener('click', onClick);
     watchSize();
+    renderExits();
     publish();
   }
 
@@ -611,6 +641,9 @@
     layerOthers = null;
     layerMe = null;
 
+    if (layerExits && layerExits.parentNode) layerExits.parentNode.removeChild(layerExits);
+    layerExits = null;
+
     if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId);
     rafId = null;
   }
@@ -625,6 +658,8 @@
     // El fondo se pinta con la base lógica de la sala: si cambia, se vuelve a montar.
     if (bgCtrl && model.room.width === bgBase) bgCtrl.set(model.room.bg);
     else mountBg();
+    // Las puertas de la sala nueva se pintan sobre su fondo.
+    renderExits();
 
     var meId = (payload.me && payload.me.id != null) ? String(payload.me.id) : null;
     var list = [];
