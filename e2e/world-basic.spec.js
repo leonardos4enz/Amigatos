@@ -93,15 +93,17 @@ test('una persona explora el mundo, camina por la plaza y vuelve al lobby', asyn
   expect(velocidad, 'el gato debería caminar a 60 px lógicos por segundo').toBeLessThan(80);
 
   // El gato camina hasta el destino (recorriendo la ruta que manda el
-  // servidor) y no aparece de golpe en él.
-  await expect.poll(async () => page.evaluate(() => {
+  // servidor) y no aparece de golpe en él. Al llegar vuelve a la animación
+  // `idle` y se queda sin destino (`target` es null en reposo).
+  await expect.poll(async () => page.evaluate((destino) => {
     const me = globalThis.window.__amigatos && globalThis.window.__amigatos.me;
-    if (!me || !me.target) return false;
-    return me.x === me.target.x && me.y === me.target.y;
-  })).toBe(true);
+    if (!me || me.anim !== 'idle') return false;
+    return me.x === destino.x && me.y === destino.y;
+  }, destino)).toBe(true);
   expect(Date.now() - t0, 'el gato debería haber caminado hasta el destino').toBeGreaterThan(200);
   const llegada = await page.evaluate(() => globalThis.window.__amigatos.me);
   expect({ x: llegada.x, y: llegada.y }).toEqual({ x: destino.x, y: destino.y });
+  expect(llegada.target, 'al llegar el gato no tiene destino').toBeNull();
 
   // 5. "Volver al lobby" regresa a la sala y repinta la lista de conectados.
   await page.locator('#btn-world-back').click();

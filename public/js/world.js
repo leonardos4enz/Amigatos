@@ -200,6 +200,7 @@
       x: rec.x,
       y: rec.y,
       target: rec.target,
+      anim: rec.anim,
       facing: rec.facing,
       path: rec.path,
       isMe: rec.isMe
@@ -308,6 +309,7 @@
           canvas: null,
           rx: d.x,
           ry: d.y,
+          anim: 'idle',
           walk: null
         };
         byId[key] = rec;
@@ -398,6 +400,20 @@
   /* Animación (la caminata)                                             */
   /* ------------------------------------------------------------------ */
 
+  // El gato se queda quieto: sin ruta, sin destino y con la animación idle.
+  // En reposo no hay destino: `target` es null (docs/mundo.md §3 y §6).
+  function restAt(rec, x, y) {
+    rec.walk = null;
+    rec.target = null;
+    rec.anim = 'idle';
+    rec.x = x;
+    rec.y = y;
+    rec.rx = x;
+    rec.ry = y;
+    place(rec);
+    if (rec.ctrl) rec.ctrl.play('idle');
+  }
+
   // Prepara la caminata de un gato: la ruta que manda el servidor y el punto
   // de la ruta en el que está ahora. El gato avanza por la ruta a WALK_SPEED
   // (la misma velocidad que el servidor), así que la posición se deriva de la
@@ -410,33 +426,26 @@
 
     // Sin ruta no hay caminata: el gato se queda donde está.
     if (ruta.length < 2) {
-      rec.walk = null;
-      rec.rx = rec.x;
-      rec.ry = rec.y;
-      place(rec);
-      if (rec.ctrl) rec.ctrl.play('idle');
+      restAt(rec, rec.x, rec.y);
       return;
     }
 
     var total = pathLength(ruta);
     var dist = distanceAlongPath(ruta, rec.x, rec.y);
+    var last = ruta[ruta.length - 1];
 
     // Ya está en el final de la ruta: no camina.
     if (dist >= total - 0.001) {
-      var last = ruta[ruta.length - 1];
-      rec.walk = null;
-      rec.x = last.x;
-      rec.y = last.y;
-      rec.rx = last.x;
-      rec.ry = last.y;
-      place(rec);
-      if (rec.ctrl) rec.ctrl.play('idle');
+      restAt(rec, last.x, last.y);
       return;
     }
 
     // El ancla es el punto de la ruta donde está el gato ahora.
     var ancla = pointAlongPath(ruta, dist);
     rec.walk = { path: ruta, dist: dist, t0: now() };
+    // Mientras camina: el destino es el final de la ruta y la animación es walk.
+    rec.target = { x: last.x, y: last.y };
+    rec.anim = 'walk';
     rec.rx = ancla.x;
     rec.ry = ancla.y;
     place(rec);
@@ -460,10 +469,12 @@
       var total = pathLength(w.path);
       var p;
       if (dist >= total) {
-        // El gato ha llegado: se queda en el final de la ruta.
+        // El gato ha llegado: se queda en el final de la ruta y vuelve a idle.
         var last = w.path[w.path.length - 1];
         p = { x: last.x, y: last.y };
         rec.walk = null;
+        rec.target = null;
+        rec.anim = 'idle';
         if (rec.ctrl) rec.ctrl.play('idle');
       } else {
         p = pointAlongPath(w.path, dist);
@@ -723,13 +734,14 @@
       players: model.all.map(function (rec) {
         return {
           id: rec.id, username: rec.username, cat: rec.cat, x: rec.x, y: rec.y,
-          target: rec.target, facing: rec.facing
+          target: rec.target, anim: rec.anim, facing: rec.facing
         };
       }),
       me: model.me
         ? {
           id: model.me.id, username: model.me.username, cat: model.me.cat,
-          x: model.me.x, y: model.me.y, target: model.me.target, facing: model.me.facing
+          x: model.me.x, y: model.me.y, target: model.me.target,
+          anim: model.me.anim, facing: model.me.facing
         }
         : null
     };
@@ -749,11 +761,14 @@
       exits: r.exits.map(function (e) {
         return { x: e.x, y: e.y, w: e.w, h: e.h, to: e.to, label: e.label };
       }),
-      me: model.me ? { x: model.me.x, y: model.me.y, target: model.me.target, facing: model.me.facing } : null,
+      me: model.me ? {
+        x: model.me.x, y: model.me.y, target: model.me.target,
+        anim: model.me.anim, facing: model.me.facing
+      } : null,
       players: model.all.map(function (rec) {
         return {
           id: rec.id, username: rec.username, x: rec.x, y: rec.y,
-          target: rec.target, facing: rec.facing
+          target: rec.target, anim: rec.anim, facing: rec.facing
         };
       }),
       scale: scale,

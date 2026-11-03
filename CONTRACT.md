@@ -337,8 +337,8 @@ window.__amigatos = {
   catHeight: 32,                    // alto del gato en px lógicos
   walkable: [[{ x, y }, ...], ...], // polígonos del piso caminable (los del servidor)
   exits: [{ x, y, w, h, to, label }], // salidas de la sala
-  me: { x, y, target, facing },    // mi gato (la posición la completa la ruta del servidor)
-  players: [{ id, username, x, y, target, facing }], // todos los gatos de la sala
+  me: { x, y, target, anim, facing },    // mi gato (la posición la completa la ruta del servidor)
+  players: [{ id, username, x, y, target, anim, facing }], // todos los gatos de la sala
   scale: 2,                         // escala entera del escenario (1..3)
   mapOpen: false,                   // el mapa del pueblo está cerrado
   transition: false,                // no hay cambio de sala en curso
@@ -350,13 +350,17 @@ actualizado con cada `world:state`, `world:join`, `world:left` y `world:moved`.
 `x` e `y` son siempre la **posición actual** del gato, nunca su destino: el cliente deriva la posición
 de la ruta que manda el servidor (`path` + `SPEED`), igual que hace el servidor.
 
+`anim` es la animación del gato: `'walk'` mientras camina y `'idle'` cuando está quieto.
+`target` es el destino mientras camina y es `null` en reposo (un gato quieto no va a ninguna parte).
+
 ### Caminata del cliente
 `public/js/world.js` recorre la ruta que manda el servidor (`path`) a `SPEED` (60 px lógicos por
 segundo, el mismo valor que `server/world.js`): la posición del gato sale de la ruta y del tiempo que
 lleva recorriéndola, igual que en el servidor. Para eso el cliente copia las funciones puras del
 servidor (`pathLength`, `pointAlongPath`), igual que copia la geometría de las salas. Cuando el gato
 llega al final de la ruta se queda ahí y vuelve a la animación `idle`; mientras camina usa la animación
-`walk`.
+`walk`. La caminata es de **velocidad constante**: sin aceleración ni frenado, así que el tiempo que
+tarda el gato en llegar es la distancia de la ruta dividida por `SPEED`.
 
 El `facing` que manda el servidor es el sentido en el que camina el gato (`'left'` o `'right'`); el
 cliente lo publica en `window.__amigatos`, pero voltear el sprite es cosa de la tarea de animación.
